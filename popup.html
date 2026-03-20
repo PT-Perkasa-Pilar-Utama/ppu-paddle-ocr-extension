@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PaddleOCR Screenshot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="header">
+    <div class="header-brand">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 7h.01M7 12h10M7 17h10"/></svg>
+      PaddleOCR
+      <span class="header-badge">Extension</span>
+    </div>
+
+    <div class="header-actions">
+      <button class="btn-capture" id="btn-capture" disabled>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        <span id="btn-capture-text">Capture &amp; Recognize</span>
+      </button>
+
+      <div class="status-indicator">
+        <div class="status-dot loading" id="status-dot"></div>
+        <span id="status-text">Initializing…</span>
+      </div>
+    </div>
+
+    <div class="progress-bar" id="progress-bar">
+      <div class="progress-bar-fill" id="progress-fill"></div>
+    </div>
+  </header>
+
+  <!-- Main App -->
+  <div class="app">
+    <!-- Canvas Area -->
+    <div class="canvas-area" id="canvas-area">
+      <div class="canvas-label">Screenshot</div>
+
+      <div class="placeholder" id="placeholder">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        <p>Click <strong>Capture &amp; Recognize</strong> to screenshot this page and run OCR</p>
+      </div>
+
+      <div class="canvas-container" id="canvas-container" style="display:none;">
+        <canvas id="screenshot-canvas"></canvas>
+        <canvas id="overlay-canvas" class="overlay-canvas"></canvas>
+      </div>
+
+      <div class="timing-badge" id="timing-badge"></div>
+    </div>
+
+    <!-- Results Panel -->
+    <div class="results-panel">
+      <div class="results-tabs">
+        <button class="tab-btn active" data-tab="list">List</button>
+        <button class="tab-btn" data-tab="json">JSON</button>
+      </div>
+
+      <div class="tab-content active" id="tab-list">
+        <div class="empty-state" id="empty-state">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          <p>OCR results will appear here</p>
+        </div>
+        <div class="results-count" id="results-count" style="display:none;"></div>
+        <ul class="results-list" id="results-list"></ul>
+      </div>
+
+      <div class="tab-content" id="tab-json">
+        <div class="json-header">
+          <div class="section-title">JSON Output</div>
+          <button class="btn-copy" id="btn-copy-json">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            <span id="copy-label">Copy</span>
+          </button>
+        </div>
+        <pre id="json-result">// Capture a screenshot to see results</pre>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="popup.js"></script>
+
+</body>
+</html>
