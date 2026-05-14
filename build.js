@@ -21,13 +21,11 @@ async function build() {
       'process.env.NODE_ENV': '"production"',
     },
     alias: {
-      'fs': './src/shims/fs.js',
-      'path': './src/shims/path.js',
-      'crypto': './src/shims/crypto.js',
-      'os': './src/shims/os.js',
-      // Canvas-based shim — real OpenCV can't run under MV3 CSP (Emscripten embind uses eval)
-      'ppu-ocv/web': './src/shims/ppu-ocv-web.js',
-      // WASM-only ort build — no new Function (the full bundle has embind eval)
+      // Route ppu-ocv's Node-only canvas entry to its browser-native sibling.
+      // The Node entry imports @napi-rs/canvas; the web entry uses the browser
+      // OffscreenCanvas/HTMLCanvasElement and has zero OpenCV dependencies.
+      'ppu-ocv/canvas': './node_modules/ppu-ocv/index.canvas-web.js',
+      // WASM-only ort build — no `new Function`. The full bundle has embind eval which MV3 CSP rejects.
       'onnxruntime-web': './node_modules/onnxruntime-web/dist/ort.wasm.min.mjs',
     },
     external: [

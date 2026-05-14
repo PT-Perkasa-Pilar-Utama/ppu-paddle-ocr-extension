@@ -20,9 +20,6 @@ async function initOCR() {
         recognition: chrome.runtime.getURL('models/rec.onnx'),
         charactersDictionary: chrome.runtime.getURL('models/dict.txt'),
       },
-      detection: {
-        autoDeskew: false,
-      },
       session: {
         executionProviders: ['wasm'],
       },

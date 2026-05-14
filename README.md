@@ -20,13 +20,7 @@ popup.html/js  →  background.js (service worker)  →  offscreen.js (OCR engin
 ├── src/
 │   ├── popup.js          # Popup UI logic (message passing, rendering)
 │   ├── background.js     # Service worker (screenshot + offscreen management)
-│   ├── offscreen.js      # OCR engine (ppu-paddle-ocr + onnxruntime-web)
-│   └── shims/
-│       ├── ppu-ocv-web.js  # Canvas-based replacement for ppu-ocv/web (see Caveats)
-│       ├── fs.js           # Empty Node.js fs shim
-│       ├── path.js         # Empty Node.js path shim
-│       ├── crypto.js       # Empty Node.js crypto shim
-│       └── os.js           # Empty Node.js os shim
+│   └── offscreen.js      # OCR engine (ppu-paddle-ocr + onnxruntime-web)
 ├── models/
 │   ├── det.onnx          # PP-OCRv5 detection model
 │   ├── rec.onnx          # PP-OCRv5 recognition model
@@ -64,27 +58,20 @@ node build.js
 The `build.js` script uses esbuild to:
 
 1. **Bundle 3 entry points** — `popup.js`, `offscreen.js`, `background.js`
-2. **Alias incompatible modules** at build time:
-   - `ppu-ocv/web` → Canvas-based shim (OpenCV.js violates CSP)
+2. **Alias modules** at build time:
+   - `ppu-ocv/canvas` → `ppu-ocv/canvas-web` (browser-native canvas, no `@napi-rs/canvas`)
    - `onnxruntime-web` → `ort.wasm.min.mjs` (WASM-only build, no `new Function`)
-   - Node.js builtins (`fs`, `path`, `crypto`, `os`) → empty shims
 3. **Copy static assets** — WASM files, models, icons, HTML/CSS
 
 ## Caveats & Workarounds
 
-### 1. OpenCV.js is incompatible with MV3 CSP
+### 1. ppu-ocv/canvas points at the Node entry
 
-Chrome Extension Manifest V3 enforces `script-src 'self' 'wasm-unsafe-eval'` — no `unsafe-eval` allowed.
+`ppu-paddle-ocr/web` imports `CanvasProcessor` from `ppu-ocv/canvas`. That subpath is the Node-only variant which pulls in `@napi-rs/canvas`. The browser-native sibling lives at `ppu-ocv/canvas-web`.
 
-**Problem:** `ppu-ocv` depends on `@techstark/opencv-js`, which is an Emscripten build of OpenCV. Emscripten's **embind** system uses `new Function()` and other dynamic code evaluation patterns internally. This violates CSP and **cannot be fixed** with build flags alone — it's baked into how embind generates JS↔WASM bindings.
+**Workaround:** an esbuild alias rewrites `ppu-ocv/canvas` to `ppu-ocv/canvas-web` at bundle time. Both expose the same `CanvasProcessor` / `CanvasToolkit` API; only the platform registration differs. No reimplementation needed.
 
-We also tested [`opencv-js-wasm`](https://github.com/ttop32/opencv-js-wasm) — same issue (Emscripten embind).
-
-**Workaround:** A canvas-based shim (`src/shims/ppu-ocv-web.js`) replaces `ppu-ocv/web` at build time via esbuild alias. It reimplements the subset of ppu-ocv's API that `ppu-paddle-ocr` uses:
-- `ImageProcessor` — resize, grayscale, threshold, rotate (native Canvas2D)
-- `CanvasToolkitBase` — crop, isDirty, drawLine (already pure Canvas2D in ppu-ocv)
-- `Contours` — connected-component labeling (replaces OpenCV findContours)
-- Platform registration — webPlatform with OffscreenCanvas support
+`ppu-paddle-ocr` v5 also dropped its OpenCV.js dependency on the web path entirely. Earlier versions of this extension shipped a hand-written canvas shim to dodge Emscripten embind's `new Function()` use; that shim is no longer required.
 
 ### 2. ONNX Runtime bundle selection
 
@@ -100,21 +87,6 @@ MV3 CSP also restricts `connect-src`, so models cannot be fetched from GitHub at
 
 Chrome extension popups are destroyed when closed. To avoid re-initializing the OCR engine on every popup open (~5s), the engine runs in a persistent offscreen document. The popup just polls for readiness and sends capture requests.
 
-## Library-Level TODOs
-
-These changes to `ppu-ocv` and `ppu-paddle-ocr` would eliminate the need for shims:
-
-### ppu-ocv
-
-- [ ] **Lazy-load OpenCV** — Don't import `@techstark/opencv-js` at the module level. Only load it when methods that actually need it are called (`Contours`, `executeOperation`). Most of `CanvasToolkitBase` and `ImageProcessor.prepareCanvas` are already pure Canvas2D.
-- [ ] **Export a CSP-safe subset** — e.g. `ppu-ocv/web/lite` that provides `CanvasToolkitBase`, `ImageProcessor` (Canvas-only ops), and platform registration without any OpenCV dependency.
-- [ ] **Pluggable OpenCV provider** — Allow users to inject their own CV backend (e.g. a future Emscripten build without embind, or a WASM-native OpenCV alternative).
-
-### ppu-paddle-ocr
-
-- [ ] **Accept a `platform.imageProcessor` override** — Allow users to pass their own ImageProcessor/Contours/CanvasToolkit implementations, so extensions can provide CSP-safe alternatives without module aliasing.
-- [ ] **Reduce OpenCV dependency surface** — Audit which OCR pipeline steps actually require OpenCV vs. Canvas2D. Detection preprocessing (resize, normalize) and recognition cropping don't need OpenCV at all.
-
 ## CSP Reference
 
 The extension uses this CSP in `manifest.json`:
@@ -127,4 +99,4 @@ The extension uses this CSP in `manifest.json`:
 
 - `'self'` — only scripts from the extension's own origin
 - `'wasm-unsafe-eval'` — allows `WebAssembly.compile`/`instantiate` (needed for ONNX Runtime)
-- No `'unsafe-eval'` — MV3 forbids it; this is why OpenCV.js (Emscripten embind) cannot be used
+- No `'unsafe-eval'` — MV3 forbids it; this is why the `ort.wasm.min.mjs` (no-embind) variant is required

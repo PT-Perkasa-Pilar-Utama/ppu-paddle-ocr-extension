@@ -12,8 +12,8 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "onnxruntime-web": "^1.24.3",
-    "ppu-paddle-ocr": "^4.1.1"
+    "onnxruntime-web": "^1.26.0",
+    "ppu-paddle-ocr": "^5.4.2"
   },
   "devDependencies": {
     "esbuild": "^0.27.4"
