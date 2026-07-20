@@ -16,8 +16,8 @@ async function initOCR() {
   try {
     ocrService = new PaddleOcrService({
       model: {
-        detection: chrome.runtime.getURL('models/det.onnx'),
-        recognition: chrome.runtime.getURL('models/rec.onnx'),
+        detection: chrome.runtime.getURL('models/det.ort'),
+        recognition: chrome.runtime.getURL('models/rec.ort'),
         charactersDictionary: chrome.runtime.getURL('models/dict.txt'),
       },
       session: {

@@ -22,9 +22,9 @@ popup.html/js  →  background.js (service worker)  →  offscreen.js (OCR engin
 │   ├── background.js     # Service worker (screenshot + offscreen management)
 │   └── offscreen.js      # OCR engine (ppu-paddle-ocr + onnxruntime-web)
 ├── models/
-│   ├── det.onnx          # PP-OCRv5 detection model
-│   ├── rec.onnx          # PP-OCRv5 recognition model
-│   └── dict.txt          # Character dictionary
+│   ├── det.ort           # PP-OCRv6 small detection model
+│   ├── rec.ort           # PP-OCRv6 small recognition model
+│   └── dict.txt          # Character dictionary (unified multilingual)
 ├── icons/                # Extension icons (16/48/128px)
 ├── popup.html            # Popup markup
 ├── popup.css             # Popup styles
@@ -41,8 +41,10 @@ popup.html/js  →  background.js (service worker)  →  offscreen.js (OCR engin
 npm install
 
 # Download OCR models into models/
-# - det.onnx (detection), rec.onnx (recognition), dict.txt (dictionary)
-# These are PP-OCRv5 mobile models from ppu-paddle-ocr-models
+# - det.ort (detection), rec.ort (recognition), dict.txt (dictionary)
+# These are the PP-OCRv6 small models (the ppu-paddle-ocr v6 defaults) from
+# ppu-paddle-ocr-models: detection/ort/PP-OCRv6_small_det.ort,
+# recognition/ort/PP-OCRv6_small_rec.ort, recognition/ppocrv6_dict.txt
 
 # Build the extension
 node build.js
@@ -58,32 +60,26 @@ node build.js
 The `build.js` script uses esbuild to:
 
 1. **Bundle 3 entry points** — `popup.js`, `offscreen.js`, `background.js`
-2. **Alias modules** at build time:
-   - `ppu-ocv/canvas` → `ppu-ocv/canvas-web` (browser-native canvas, no `@napi-rs/canvas`)
-   - `onnxruntime-web` → `ort.wasm.min.mjs` (WASM-only build, no `new Function`)
-3. **Copy static assets** — WASM files, models, icons, HTML/CSS
+2. **Alias `onnxruntime-web`** → `ort.wasm.min.mjs` (WASM-only build, no `new Function`)
+3. **Copy static assets** — the WASM binary + glue, models, icons, HTML/CSS
+
+Since ppu-paddle-ocr v5.4.3, the web entry routes canvas access through its
+platform provider, so the old `ppu-ocv/canvas` → `ppu-ocv/canvas-web` alias is
+no longer needed — `ppu-paddle-ocr/web` bundles cleanly out of the box.
 
 ## Caveats & Workarounds
 
-### 1. ppu-ocv/canvas points at the Node entry
-
-`ppu-paddle-ocr/web` imports `CanvasProcessor` from `ppu-ocv/canvas`. That subpath is the Node-only variant which pulls in `@napi-rs/canvas`. The browser-native sibling lives at `ppu-ocv/canvas-web`.
-
-**Workaround:** an esbuild alias rewrites `ppu-ocv/canvas` to `ppu-ocv/canvas-web` at bundle time. Both expose the same `CanvasProcessor` / `CanvasToolkit` API; only the platform registration differs. No reimplementation needed.
-
-`ppu-paddle-ocr` v5 also dropped its OpenCV.js dependency on the web path entirely. Earlier versions of this extension shipped a hand-written canvas shim to dodge Emscripten embind's `new Function()` use; that shim is no longer required.
-
-### 2. ONNX Runtime bundle selection
+### 1. ONNX Runtime bundle selection
 
 **Problem:** The default `onnxruntime-web` bundle (`ort.bundle.min.mjs`) includes WebGPU/WebGL backends that use Emscripten embind (`new Function`).
 
-**Workaround:** Alias `onnxruntime-web` to `ort.wasm.min.mjs` — the WASM-only build with **zero** `new Function` calls. This limits execution to the WASM backend only (no WebGPU), which is fine for OCR.
+**Workaround:** Alias `onnxruntime-web` to `ort.wasm.min.mjs` — the WASM-only build with **zero** `new Function` calls. This limits execution to the WASM backend only (no WebGPU), which is fine for OCR. Only `ort-wasm-simd-threaded.mjs`/`.wasm` are copied into `dist/` — the jsep/jspi/asyncify variants are never loaded by the WASM-only build.
 
-### 3. Models are bundled locally
+### 2. Models are bundled locally
 
-MV3 CSP also restricts `connect-src`, so models cannot be fetched from GitHub at runtime. The ONNX models (~12MB total) are included in the `dist/` folder and loaded via `chrome.runtime.getURL()`.
+MV3 CSP also restricts `connect-src`, so models cannot be fetched from GitHub at runtime. The PP-OCRv6 small models (~31MB total, `.ort` format for faster session creation) are included in the `dist/` folder and loaded via `chrome.runtime.getURL()`.
 
-### 4. Offscreen document for persistence
+### 3. Offscreen document for persistence
 
 Chrome extension popups are destroyed when closed. To avoid re-initializing the OCR engine on every popup open (~5s), the engine runs in a persistent offscreen document. The popup just polls for readiness and sends capture requests.
 

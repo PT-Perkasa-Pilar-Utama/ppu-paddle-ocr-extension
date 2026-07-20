@@ -21,10 +21,6 @@ async function build() {
       'process.env.NODE_ENV': '"production"',
     },
     alias: {
-      // Route ppu-ocv's Node-only canvas entry to its browser-native sibling.
-      // The Node entry imports @napi-rs/canvas; the web entry uses the browser
-      // OffscreenCanvas/HTMLCanvasElement and has zero OpenCV dependencies.
-      'ppu-ocv/canvas': './node_modules/ppu-ocv/index.canvas-web.js',
       // WASM-only ort build — no `new Function`. The full bundle has embind eval which MV3 CSP rejects.
       'onnxruntime-web': './node_modules/onnxruntime-web/dist/ort.wasm.min.mjs',
     },
@@ -67,11 +63,10 @@ async function build() {
     minify: false,
   });
 
-  // Copy WASM files AND their .mjs glue scripts from onnxruntime-web
+  // Copy the WASM binary + .mjs glue from onnxruntime-web. The wasm-only ort
+  // build references only the plain variant — jsep/jspi/asyncify are dead weight.
   const ortDist = path.join(__dirname, 'node_modules', 'onnxruntime-web', 'dist');
-  const wasmFiles = fs.readdirSync(ortDist).filter(f =>
-    f.startsWith('ort-wasm-simd-threaded') && (f.endsWith('.wasm') || f.endsWith('.mjs'))
-  );
+  const wasmFiles = ['ort-wasm-simd-threaded.mjs', 'ort-wasm-simd-threaded.wasm'];
   for (const file of wasmFiles) {
     fs.copyFileSync(path.join(ortDist, file), path.join(distDir, file));
     console.log(`  Copied ${file}`);
