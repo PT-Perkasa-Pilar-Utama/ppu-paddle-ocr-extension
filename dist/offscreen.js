@@ -17,594 +17,38 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
-// node_modules/ppu-ocv/canvas-factory.js
-function setPlatform(platform) {
-  _platform = platform;
-}
-function getPlatform() {
-  if (!_platform) {
-    throw new Error('No canvas platform registered. Import "ppu-ocv" (Node), "ppu-ocv/web" (browser), "ppu-ocv/canvas" (Node canvas-only), or "ppu-ocv/canvas-web" (browser canvas-only) to auto-register.');
-  }
-  return _platform;
-}
-var _platform;
-var init_canvas_factory = __esm({
-  "node_modules/ppu-ocv/canvas-factory.js"() {
-    _platform = null;
-  }
-});
-
-// node_modules/ppu-ocv/platform/web.js
-var webPlatform;
-var init_web = __esm({
-  "node_modules/ppu-ocv/platform/web.js"() {
-    webPlatform = { createCanvas(width, height) {
-      if (typeof OffscreenCanvas !== "undefined") {
-        return new OffscreenCanvas(width, height);
-      }
-      if (typeof document !== "undefined") {
-        let c = document.createElement("canvas");
-        c.width = width;
-        c.height = height;
-        return c;
-      }
-      throw new Error("No canvas implementation available in this environment.");
-    }, async loadImage(source) {
-      let blob;
-      if (source instanceof ArrayBuffer) {
-        blob = new Blob([source]);
-      } else if (typeof source === "string") {
-        let res = await fetch(source);
-        blob = await res.blob();
-      } else {
-        throw new Error("loadImage: unsupported source type");
-      }
-      let bitmap = await createImageBitmap(blob);
-      let canvas = webPlatform.createCanvas(bitmap.width, bitmap.height);
-      let ctx = canvas.getContext("2d");
-      ctx.drawImage(bitmap, 0, 0);
-      bitmap.close();
-      return canvas;
-    }, isCanvas(value) {
-      if (typeof HTMLCanvasElement !== "undefined" && value instanceof HTMLCanvasElement) {
-        return true;
-      }
-      if (typeof OffscreenCanvas !== "undefined" && value instanceof OffscreenCanvas) {
-        return true;
-      }
-      return false;
-    } };
-  }
-});
-
-// node_modules/ppu-ocv/canvas-toolkit.base.js
-var CanvasToolkitBase;
-var init_canvas_toolkit_base = __esm({
-  "node_modules/ppu-ocv/canvas-toolkit.base.js"() {
-    init_canvas_factory();
-    CanvasToolkitBase = class _CanvasToolkitBase {
-      static _baseInstance = null;
-      step = 0;
-      constructor() {
-      }
-      static getInstance() {
-        if (!_CanvasToolkitBase._baseInstance) {
-          _CanvasToolkitBase._baseInstance = new _CanvasToolkitBase();
-        }
-        return _CanvasToolkitBase._baseInstance;
-      }
-      crop(options) {
-        const { bbox, canvas } = options;
-        let croppedCanvas = getPlatform().createCanvas(bbox.x1 - bbox.x0, bbox.y1 - bbox.y0);
-        let croppedCtx = croppedCanvas.getContext("2d");
-        croppedCtx.drawImage(canvas, bbox.x0, bbox.y0, bbox.x1 - bbox.x0, bbox.y1 - bbox.y0, 0, 0, croppedCanvas.width, croppedCanvas.height);
-        return croppedCanvas;
-      }
-      isDirty(options) {
-        const { canvas, threshold = 127.5, majorColorThreshold = 0.97 } = options;
-        let whiteCount = 0;
-        let blackCount = 0;
-        let borderlessCanvas = this.crop({ bbox: { x0: canvas.width * 0.1, y0: canvas.height * 0.1, x1: canvas.width * 0.9, y1: canvas.height * 0.9 }, canvas });
-        let ctx = borderlessCanvas.getContext("2d");
-        let colorData = ctx.getImageData(0, 0, borderlessCanvas.width, borderlessCanvas.height).data;
-        for (let i = 0; i < colorData.length; i += 4) {
-          let red = colorData[i];
-          let green = colorData[i + 1];
-          let blue = colorData[i + 2];
-          if (red >= threshold && green >= threshold && blue >= threshold) {
-            whiteCount++;
-          } else {
-            blackCount++;
-          }
-        }
-        let majorColorRatio = Math.max(whiteCount, blackCount) / (blackCount + whiteCount);
-        return majorColorRatio < majorColorThreshold;
-      }
-      drawLine(options) {
-        const { ctx, x: x2, y, width, height, lineWidth = 2, color = "blue" } = options;
-        ctx.beginPath();
-        ctx.strokeStyle = color;
-        ctx.lineWidth = lineWidth;
-        ctx.strokeRect(x2, y, width, height);
-        ctx.closePath();
-      }
-      drawContour(options) {
-        const { ctx, contour, strokeStyle = "red", lineWidth = 2 } = options;
-        let pts = contour.data32S;
-        if (pts.length < 4) return;
-        ctx.strokeStyle = strokeStyle;
-        ctx.lineWidth = lineWidth;
-        ctx.beginPath();
-        ctx.moveTo(pts[0], pts[1]);
-        for (let i = 2; i < pts.length; i += 2) {
-          ctx.lineTo(pts[i], pts[i + 1]);
-        }
-        ctx.closePath();
-        ctx.stroke();
-      }
-    };
-  }
-});
-
-// node_modules/ppu-ocv/canvas-processor.js
-var CanvasProcessor;
-var init_canvas_processor = __esm({
-  "node_modules/ppu-ocv/canvas-processor.js"() {
-    init_canvas_factory();
-    CanvasProcessor = class {
-      _canvas;
-      constructor(source) {
-        this._canvas = source;
-      }
-      get width() {
-        return this._canvas.width;
-      }
-      get height() {
-        return this._canvas.height;
-      }
-      resize(options) {
-        const { width, height } = options;
-        let dst = getPlatform().createCanvas(width, height);
-        dst.getContext("2d").drawImage(this._canvas, 0, 0, width, height);
-        this._canvas = dst;
-        return this;
-      }
-      grayscale() {
-        const { width, height } = this._canvas;
-        let imageData = this._canvas.getContext("2d").getImageData(0, 0, width, height);
-        let d = imageData.data;
-        for (let i = 0; i < d.length; i += 4) {
-          let luma = Math.round(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]);
-          d[i] = luma;
-          d[i + 1] = luma;
-          d[i + 2] = luma;
-        }
-        let dst = getPlatform().createCanvas(width, height);
-        dst.getContext("2d").putImageData(imageData, 0, 0);
-        this._canvas = dst;
-        return this;
-      }
-      convert(options = {}) {
-        const { alpha = 1, beta = 0 } = options;
-        if (alpha === 1 && beta === 0) return this;
-        const { width, height } = this._canvas;
-        let imageData = this._canvas.getContext("2d").getImageData(0, 0, width, height);
-        let d = imageData.data;
-        for (let i = 0; i < d.length; i += 4) {
-          d[i] = Math.round(d[i] * alpha + beta);
-          d[i + 1] = Math.round(d[i + 1] * alpha + beta);
-          d[i + 2] = Math.round(d[i + 2] * alpha + beta);
-        }
-        let dst = getPlatform().createCanvas(width, height);
-        dst.getContext("2d").putImageData(imageData, 0, 0);
-        this._canvas = dst;
-        return this;
-      }
-      invert() {
-        const { width, height } = this._canvas;
-        let imageData = this._canvas.getContext("2d").getImageData(0, 0, width, height);
-        let d = imageData.data;
-        for (let i = 0; i < d.length; i += 4) {
-          d[i] = 255 - d[i];
-          d[i + 1] = 255 - d[i + 1];
-          d[i + 2] = 255 - d[i + 2];
-        }
-        let dst = getPlatform().createCanvas(width, height);
-        dst.getContext("2d").putImageData(imageData, 0, 0);
-        this._canvas = dst;
-        return this;
-      }
-      threshold(options = {}) {
-        const { thresh = 127, maxValue = 255 } = options;
-        const { width, height } = this._canvas;
-        let imageData = this._canvas.getContext("2d").getImageData(0, 0, width, height);
-        let d = imageData.data;
-        for (let i = 0; i < d.length; i += 4) {
-          let luma = d[i] === d[i + 1] && d[i + 1] === d[i + 2] ? d[i] : Math.round(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]);
-          let val = luma > thresh ? maxValue : 0;
-          d[i] = val;
-          d[i + 1] = val;
-          d[i + 2] = val;
-        }
-        let dst = getPlatform().createCanvas(width, height);
-        dst.getContext("2d").putImageData(imageData, 0, 0);
-        this._canvas = dst;
-        return this;
-      }
-      border(options = {}) {
-        const { size = 10, color = "white" } = options;
-        const { width, height } = this._canvas;
-        let dst = getPlatform().createCanvas(width + size * 2, height + size * 2);
-        let ctx = dst.getContext("2d");
-        ctx.fillStyle = color;
-        ctx.fillRect(0, 0, dst.width, dst.height);
-        ctx.drawImage(this._canvas, size, size);
-        this._canvas = dst;
-        return this;
-      }
-      rotate(options) {
-        const { angle, cx = this._canvas.width / 2, cy = this._canvas.height / 2 } = options;
-        if (angle === 0) return this;
-        const { width, height } = this._canvas;
-        let dst = getPlatform().createCanvas(width, height);
-        let ctx = dst.getContext("2d");
-        ctx.save();
-        ctx.translate(cx, cy);
-        ctx.rotate(-angle * Math.PI / 180);
-        ctx.drawImage(this._canvas, -cx, -cy);
-        ctx.restore();
-        this._canvas = dst;
-        return this;
-      }
-      findRegions(options = {}) {
-        const { foreground = "light", thresh = 127, minArea = 1, maxArea = 1 / 0, padding, scale = 1 } = options;
-        const { width, height } = this._canvas;
-        let data = this._canvas.getContext("2d").getImageData(0, 0, width, height).data;
-        let visited = new Uint8Array(width * height);
-        let regions = [];
-        let neighbours = [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]];
-        let isForeground = (pixelIdx) => {
-          let r = data[pixelIdx];
-          return foreground === "light" ? r > thresh : r <= thresh;
-        };
-        for (let startY = 0; startY < height; startY++) {
-          for (let startX = 0; startX < width; startX++) {
-            let startFlat = startY * width + startX;
-            if (visited[startFlat]) continue;
-            visited[startFlat] = 1;
-            if (!isForeground(startFlat * 4)) continue;
-            let stack = [startFlat];
-            let minX = startX, maxX = startX;
-            let minY = startY, maxY = startY;
-            let area = 0;
-            while (stack.length > 0) {
-              let flat = stack.pop();
-              area++;
-              let x2 = flat % width;
-              let y = (flat - x2) / width;
-              if (x2 < minX) minX = x2;
-              else if (x2 > maxX) maxX = x2;
-              if (y < minY) minY = y;
-              else if (y > maxY) maxY = y;
-              for (const [dx, dy] of neighbours) {
-                let nx = x2 + dx;
-                let ny = y + dy;
-                if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
-                let nFlat = ny * width + nx;
-                if (visited[nFlat]) continue;
-                visited[nFlat] = 1;
-                if (isForeground(nFlat * 4)) stack.push(nFlat);
-              }
-            }
-            if (area >= minArea && area <= maxArea) {
-              let x0 = minX;
-              let y0 = minY;
-              let x1 = maxX + 1;
-              let y1 = maxY + 1;
-              if (padding) {
-                let bboxH = y1 - y0;
-                let vPad = Math.round(bboxH * (padding.vertical ?? 0));
-                let hPad = Math.round(bboxH * (padding.horizontal ?? 0));
-                x0 = Math.max(0, x0 - hPad);
-                y0 = Math.max(0, y0 - vPad);
-                x1 = Math.min(width, x1 + hPad);
-                y1 = Math.min(height, y1 + vPad);
-              }
-              if (scale !== 1) {
-                x0 = Math.max(0, Math.round(x0 * scale));
-                y0 = Math.max(0, Math.round(y0 * scale));
-                x1 = Math.round(x1 * scale);
-                y1 = Math.round(y1 * scale);
-              }
-              regions.push({ bbox: { x0, y0, x1, y1 }, area });
-            }
-          }
-        }
-        return regions;
-      }
-      toCanvas() {
-        return this._canvas;
-      }
-      static async prepareCanvas(file) {
-        if (getPlatform().isCanvas(file)) return file;
-        return getPlatform().loadImage(file);
-      }
-      static async prepareBuffer(canvas) {
-        if (canvas instanceof ArrayBuffer) return canvas;
-        if (typeof canvas.toBuffer === "function") {
-          let buffer = canvas.toBuffer("image/png");
-          let arrayBuffer = new ArrayBuffer(buffer.byteLength);
-          new Uint8Array(arrayBuffer).set(new Uint8Array(buffer));
-          return arrayBuffer;
-        }
-        if (typeof canvas.toDataURL === "function") {
-          let dataURL = canvas.toDataURL("image/png");
-          let base64Data = dataURL.replace(/^data:image\/png;base64,/, "");
-          let binaryString = atob(base64Data);
-          let arrayBuffer = new ArrayBuffer(binaryString.length);
-          let bytes = new Uint8Array(arrayBuffer);
-          for (let i = 0; i < binaryString.length; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
-          }
-          return arrayBuffer;
-        }
-        let ctx = canvas.getContext("2d");
-        let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        let canvasBuffer = new ArrayBuffer(imageData.data.byteLength);
-        new Uint8Array(canvasBuffer).set(new Uint8Array(imageData.data.buffer, imageData.data.byteOffset, imageData.data.byteLength));
-        return canvasBuffer;
-      }
-    };
-  }
-});
-
-// node_modules/ppu-ocv/index.canvas-web.js
-var init_index_canvas_web = __esm({
-  "node_modules/ppu-ocv/index.canvas-web.js"() {
-    init_canvas_factory();
-    init_web();
-    init_canvas_factory();
-    init_web();
-    init_canvas_toolkit_base();
-    init_canvas_processor();
-    setPlatform(webPlatform);
-  }
-});
-
-// node_modules/ppu-paddle-ocr/constants.js
-var DEFAULT_DEBUGGING_OPTIONS, DEFAULT_DETECTION_OPTIONS, DEFAULT_RECOGNITION_OPTIONS, DEFAULT_SESSION_OPTIONS, DEFAULT_PROCESSING_ENGINE, DEFAULT_PROCESSING_OPTIONS, DEFAULT_PADDLE_OPTIONS;
-var init_constants = __esm({
-  "node_modules/ppu-paddle-ocr/constants.js"() {
-    DEFAULT_DEBUGGING_OPTIONS = { verbose: false, debug: false, debugFolder: "out" };
-    DEFAULT_DETECTION_OPTIONS = { mean: [0.485, 0.456, 0.406], stdDeviation: [0.229, 0.224, 0.225], maxSideLength: 640, minimumAreaThreshold: 50, paddingVertical: 0.4, paddingHorizontal: 0.6 };
-    DEFAULT_RECOGNITION_OPTIONS = { imageHeight: 48, strategy: "per-line", crossLineWidthFactor: 1, charactersDictionary: [] };
-    DEFAULT_SESSION_OPTIONS = { executionProviders: ["cpu"], graphOptimizationLevel: "all", enableCpuMemArena: true, enableMemPattern: true, executionMode: "sequential", interOpNumThreads: 0, intraOpNumThreads: 0 };
-    DEFAULT_PROCESSING_ENGINE = "opencv";
-    DEFAULT_PROCESSING_OPTIONS = { engine: DEFAULT_PROCESSING_ENGINE };
-    DEFAULT_PADDLE_OPTIONS = { model: {}, detection: DEFAULT_DETECTION_OPTIONS, recognition: DEFAULT_RECOGNITION_OPTIONS, debugging: DEFAULT_DEBUGGING_OPTIONS, session: DEFAULT_SESSION_OPTIONS, processing: DEFAULT_PROCESSING_OPTIONS };
-  }
-});
-
-// node_modules/ppu-paddle-ocr/utils.js
-function deepMerge(target, ...sources) {
-  if (!sources.length) return target;
-  let source = sources.shift();
-  if (isObject(target) && isObject(source)) {
-    for (let key in source) {
-      if (Object.prototype.hasOwnProperty.call(source, key)) {
-        let sourceValue = source[key];
-        let targetValue = target[key];
-        if (isObject(sourceValue)) {
-          if (!targetValue || !isObject(targetValue)) {
-            target[key] = {};
-          }
-          deepMerge(target[key], sourceValue);
-        } else if (sourceValue !== void 0) {
-          target[key] = sourceValue;
-        }
-      }
-    }
-  }
-  return deepMerge(target, ...sources);
-}
-function parseDictionary(source) {
-  let content = typeof source === "string" ? source : new TextDecoder("utf-8").decode(source);
-  return content.split(/\r?\n/);
-}
-function isObject(item) {
-  return item !== null && typeof item === "object" && !Array.isArray(item) && !(item instanceof Date) && !(item instanceof RegExp) && !(item instanceof ArrayBuffer) && !ArrayBuffer.isView(item);
-}
-var init_utils = __esm({
-  "node_modules/ppu-paddle-ocr/utils.js"() {
-  }
-});
-
-// node_modules/ppu-paddle-ocr/core/image-cache.js
-var ImageCache, globalImageCache;
-var init_image_cache = __esm({
-  "node_modules/ppu-paddle-ocr/core/image-cache.js"() {
-    ImageCache = class {
-      cache = /* @__PURE__ */ new Map();
-      maxSize;
-      constructor(maxSize = 10) {
-        this.maxSize = maxSize;
-      }
-      get(key) {
-        let value = this.cache.get(key);
-        if (value !== void 0) {
-          this.cache.delete(key);
-          this.cache.set(key, value);
-          return value;
-        }
-        return;
-      }
-      set(key, value) {
-        if (this.cache.has(key)) {
-          this.cache.delete(key);
-        } else if (this.cache.size >= this.maxSize) {
-          let firstKey = this.cache.keys().next().value;
-          if (firstKey !== void 0) {
-            this.cache.delete(firstKey);
-          }
-        }
-        this.cache.set(key, value);
-      }
-      clear() {
-        this.cache.clear();
-      }
-      static generateKey(imageBuffer) {
-        let view = new Uint8Array(imageBuffer);
-        let len = Math.min(view.length, 1024);
-        let hash = 0;
-        for (let i = 0; i < len; i++) {
-          hash = (hash << 5) - hash + view[i];
-          hash = hash & hash;
-        }
-        return `${hash}_${view.length}`;
-      }
-    };
-    globalImageCache = new ImageCache();
-  }
-});
-
-// node_modules/ppu-paddle-ocr/core/base-paddle-ocr.service.js
-var BasePaddleOcrService, MODEL_BASE_URL, DICT_BASE_URL, DEFAULT_MODEL_URLS;
-var init_base_paddle_ocr_service = __esm({
-  "node_modules/ppu-paddle-ocr/core/base-paddle-ocr.service.js"() {
-    init_index_canvas_web();
-    init_constants();
-    init_utils();
-    init_image_cache();
-    BasePaddleOcrService = class {
-      options = DEFAULT_PADDLE_OPTIONS;
-      detectionSession = null;
-      recognitionSession = null;
-      detector = null;
-      recognitor = null;
-      platform;
-      constructor(platform, options) {
-        this.platform = platform;
-        this.options = deepMerge({}, DEFAULT_PADDLE_OPTIONS, options);
-        this.options.session = this.options.session || DEFAULT_PADDLE_OPTIONS.session;
-      }
-      log(message) {
-        if (this.options.debugging?.verbose) {
-          console.log(`[PaddleOcrService:Base] ${message}`);
-        }
-      }
-      async recognize(image, options) {
-        if (!this.detector || !this.recognitor) {
-          await this.initSessions();
-        }
-        try {
-          let imageBuffer;
-          if (typeof image === "string") {
-            if (!image.startsWith("http") && !image.startsWith("/")) {
-              throw new Error("Invalid image string format. Must be an HTTP URL, an absolute path, ArrayBuffer, or Canvas");
-            }
-            imageBuffer = await this.platform.loadResource(image, image);
-          } else if (image instanceof ArrayBuffer) {
-            imageBuffer = image;
-          } else {
-            if (typeof image.toBuffer === "function") {
-              let canvasWithBuffer = image;
-              let buffer = canvasWithBuffer.toBuffer("image/png");
-              imageBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
-            } else {
-              let canvasWithCtx = image;
-              let ctx = canvasWithCtx.getContext("2d", { willReadFrequently: true });
-              let imageData = ctx.getImageData(0, 0, canvasWithCtx.width, canvasWithCtx.height);
-              let data = imageData.data;
-              imageBuffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
-            }
-          }
-          let cacheKey = ImageCache.generateKey(imageBuffer);
-          if (!options?.noCache && !options?.dictionary) {
-            let cacheResult = globalImageCache.get(cacheKey);
-            if (cacheResult) {
-              this.log("Using cached OCR result");
-              if (options?.flatten) {
-                return { text: cacheResult.text, results: cacheResult.lines ? cacheResult.lines.flat() : cacheResult.results ?? [], confidence: cacheResult.confidence };
-              }
-              return cacheResult;
-            }
-          }
-          let boxes = [];
-          let canvas = typeof image === "string" || image instanceof ArrayBuffer ? await CanvasProcessor.prepareCanvas(imageBuffer) : image;
-          boxes = await this.detector.run(canvas);
-          if (boxes.length === 0) {
-            return options?.flatten ? { text: "", results: [], confidence: 0 } : { text: "", lines: [], confidence: 0 };
-          }
-          let dict = this.options.recognition?.charactersDictionary;
-          if (options?.dictionary) {
-            let dictionaryContent = "";
-            if (typeof options.dictionary === "string") {
-              let dictBuffer = await this.platform.loadResource(options.dictionary, options.dictionary);
-              dictionaryContent = new TextDecoder("utf-8").decode(dictBuffer);
-            } else {
-              dictionaryContent = new TextDecoder("utf-8").decode(options.dictionary);
-            }
-            dict = parseDictionary(dictionaryContent);
-          }
-          let strategy = options?.strategy ?? this.options.recognition?.strategy ?? "per-line";
-          let results = await this.recognitor.run(canvas, boxes, dict, strategy);
-          let groupedResult = this.groupResultsByLine(results);
-          let finalResult = options?.flatten ? this.flattenResults(results) : groupedResult;
-          if (!options?.noCache && !options?.dictionary) {
-            globalImageCache.set(cacheKey, finalResult);
-          }
-          return finalResult;
-        } catch (e) {
-          let err = e instanceof Error ? e : new Error(String(e));
-          console.error("recognize: error", err.message, err.stack);
-          throw e;
-        }
-      }
-      flattenResults(results) {
-        if (results.length === 0) {
-          return { text: "", results: [], confidence: 0 };
-        }
-        let text = results.map((r) => r.text).join(" ");
-        let avgConfidence = results.reduce((sum, r) => sum + r.confidence, 0) / results.length;
-        return { text, results, confidence: avgConfidence };
-      }
-      groupResultsByLine(results) {
-        if (results.length === 0) {
-          return { text: "", lines: [], confidence: 0 };
-        }
-        let lines = [];
-        let currentLine = [];
-        let firstResult = results[0];
-        if (!firstResult) return { text: "", lines: [], confidence: 0 };
-        let currentY = firstResult.box.y;
-        let avgHeight = firstResult.box.height;
-        for (let result of results) {
-          const { box } = result;
-          if (Math.abs(box.y - currentY) < avgHeight / 2) {
-            currentLine.push(result);
-            avgHeight = (avgHeight * (currentLine.length - 1) + box.height) / currentLine.length;
-          } else {
-            currentLine.sort((a, b) => a.box.x - b.box.x);
-            lines.push(currentLine);
-            currentLine = [result];
-            currentY = box.y;
-            avgHeight = box.height;
-          }
-        }
-        if (currentLine.length > 0) {
-          currentLine.sort((a, b) => a.box.x - b.box.x);
-          lines.push(currentLine);
-        }
-        let fullText = lines.map((line) => line.map((r) => r.text).join(" ")).join(`
-`);
-        let totalConfidence = lines.reduce((sum, line) => sum + line.reduce((s, r) => s + r.confidence, 0), 0);
-        let totalItems = lines.reduce((sum, line) => sum + line.length, 0);
-        return { text: fullText, lines, confidence: totalItems > 0 ? totalConfidence / totalItems : 0 };
-      }
-    };
+// node_modules/ppu-paddle-ocr/model-catalogue.js
+var MODEL_BASE_URL, DICT_BASE_URL, V6_SMALL_MODEL, V6_MEDIUM_MODEL, V6_TINY_MODEL, V5_EN_MOBILE_MODEL, V5_EN_MOBILE_INT8_MODEL, V5_EN_SERVER_MODEL, V5_MOBILE_MODEL, V5_SERVER_MODEL, V4_EN_MOBILE_MODEL, V4_MOBILE_MODEL, V4_SERVER_MODEL, V4_SERVER_DOC_MODEL, V3_MOBILE_MODEL, V3_JAPANESE_MOBILE_MODEL, V5_ARABIC_MOBILE_MODEL, V5_CYRILLIC_MOBILE_MODEL, V5_DEVANAGARI_MOBILE_MODEL, V5_GREEK_MOBILE_MODEL, V5_ESLAV_MOBILE_MODEL, V5_KOREAN_MOBILE_MODEL, V5_LATIN_MOBILE_MODEL, V5_TAMIL_MOBILE_MODEL, V5_TELUGU_MOBILE_MODEL, V5_THAI_MOBILE_MODEL, DEFAULT_MODEL, DEFAULT_MODEL_URLS;
+var init_model_catalogue = __esm({
+  "node_modules/ppu-paddle-ocr/model-catalogue.js"() {
     MODEL_BASE_URL = "https://media.githubusercontent.com/media/PT-Perkasa-Pilar-Utama/ppu-paddle-ocr-models/main";
     DICT_BASE_URL = "https://raw.githubusercontent.com/PT-Perkasa-Pilar-Utama/ppu-paddle-ocr-models/main";
-    DEFAULT_MODEL_URLS = { detection: `${MODEL_BASE_URL}/detection/PP-OCRv5_mobile_det_infer.ort`, recognition: `${MODEL_BASE_URL}/recognition/multi/en/v5/en_PP-OCRv5_mobile_rec_infer.ort`, charactersDictionary: `${DICT_BASE_URL}/recognition/multi/en/v5/ppocrv5_en_dict.txt` };
+    V6_SMALL_MODEL = { detection: `${MODEL_BASE_URL}/detection/ort/PP-OCRv6_small_det.ort`, recognition: `${MODEL_BASE_URL}/recognition/ort/PP-OCRv6_small_rec.ort`, charactersDictionary: `${DICT_BASE_URL}/recognition/ppocrv6_dict.txt` };
+    V6_MEDIUM_MODEL = { detection: `${MODEL_BASE_URL}/detection/ort/PP-OCRv6_medium_det.ort`, recognition: `${MODEL_BASE_URL}/recognition/ort/PP-OCRv6_medium_rec.ort`, charactersDictionary: `${DICT_BASE_URL}/recognition/ppocrv6_dict.txt` };
+    V6_TINY_MODEL = { detection: `${MODEL_BASE_URL}/detection/ort/PP-OCRv6_tiny_det.ort`, recognition: `${MODEL_BASE_URL}/recognition/ort/PP-OCRv6_tiny_rec.ort`, charactersDictionary: `${DICT_BASE_URL}/recognition/ppocrv6_tiny_dict.txt` };
+    V5_EN_MOBILE_MODEL = { detection: `${MODEL_BASE_URL}/detection/PP-OCRv5_mobile_det_infer.ort`, recognition: `${MODEL_BASE_URL}/recognition/multi/en/v5/en_PP-OCRv5_mobile_rec_infer.ort`, charactersDictionary: `${DICT_BASE_URL}/recognition/multi/en/v5/ppocrv5_en_dict.txt` };
+    V5_EN_MOBILE_INT8_MODEL = { detection: `${MODEL_BASE_URL}/detection/PP-OCRv5_mobile_det_infer.ort`, recognition: `${MODEL_BASE_URL}/recognition/multi/en/v5/en_PP-OCRv5_mobile_rec_infer_int8.ort`, charactersDictionary: `${DICT_BASE_URL}/recognition/multi/en/v5/ppocrv5_en_dict.txt` };
+    V5_EN_SERVER_MODEL = { detection: `${MODEL_BASE_URL}/detection/PP-OCRv5_server_det_infer.onnx`, recognition: `${MODEL_BASE_URL}/recognition/PP-OCRv5_server_rec_infer.onnx`, charactersDictionary: `${DICT_BASE_URL}/recognition/ppocrv5_dict.txt` };
+    V5_MOBILE_MODEL = { detection: `${MODEL_BASE_URL}/detection/PP-OCRv5_mobile_det_infer.onnx`, recognition: `${MODEL_BASE_URL}/recognition/PP-OCRv5_mobile_rec_infer.onnx`, charactersDictionary: `${DICT_BASE_URL}/recognition/ppocrv5_dict.txt` };
+    V5_SERVER_MODEL = { detection: `${MODEL_BASE_URL}/detection/PP-OCRv5_server_det_infer.onnx`, recognition: `${MODEL_BASE_URL}/recognition/PP-OCRv5_server_rec_infer.onnx`, charactersDictionary: `${DICT_BASE_URL}/recognition/ppocrv5_dict.txt` };
+    V4_EN_MOBILE_MODEL = { detection: `${MODEL_BASE_URL}/detection/PP-OCRv4_mobile_det_infer.onnx`, recognition: `${MODEL_BASE_URL}/recognition/multi/en/v4/en_PP-OCRv4_mobile_rec_infer.onnx`, charactersDictionary: `${DICT_BASE_URL}/recognition/multi/en/v4/en_dict.txt` };
+    V4_MOBILE_MODEL = { detection: `${MODEL_BASE_URL}/detection/PP-OCRv4_mobile_det_infer.onnx`, recognition: `${MODEL_BASE_URL}/recognition/PP-OCRv4_mobile_rec_infer.onnx`, charactersDictionary: `${DICT_BASE_URL}/recognition/ppocrv4_dict.txt` };
+    V4_SERVER_MODEL = { detection: `${MODEL_BASE_URL}/detection/PP-OCRv4_server_det_infer.onnx`, recognition: `${MODEL_BASE_URL}/recognition/PP-OCRv4_server_rec_infer.onnx`, charactersDictionary: `${DICT_BASE_URL}/recognition/ppocrv4_dict.txt` };
+    V4_SERVER_DOC_MODEL = { detection: `${MODEL_BASE_URL}/detection/PP-OCRv4_server_det_infer.onnx`, recognition: `${MODEL_BASE_URL}/recognition/PP-OCRv4_server_rec_doc_infer.onnx`, charactersDictionary: `${DICT_BASE_URL}/recognition/ppocrv4_doc_dict.txt` };
+    V3_MOBILE_MODEL = { detection: `${MODEL_BASE_URL}/detection/PP-OCRv5_mobile_det_infer.onnx`, recognition: `${MODEL_BASE_URL}/recognition/PP-OCRv3_mobile_rec_infer.onnx`, charactersDictionary: `${DICT_BASE_URL}/recognition/ppocrv3_dict.txt` };
+    V3_JAPANESE_MOBILE_MODEL = { detection: `${MODEL_BASE_URL}/detection/PP-OCRv5_mobile_det_infer.onnx`, recognition: `${MODEL_BASE_URL}/recognition/multi/japan/v3/japan_PP-OCRv3_mobile_rec_infer.onnx`, charactersDictionary: `${DICT_BASE_URL}/recognition/multi/japan/v3/japan_dict.txt` };
+    V5_ARABIC_MOBILE_MODEL = { detection: `${MODEL_BASE_URL}/detection/PP-OCRv5_mobile_det_infer.onnx`, recognition: `${MODEL_BASE_URL}/recognition/multi/arabic/v5/arabic_PP-OCRv5_mobile_rec_infer.onnx`, charactersDictionary: `${DICT_BASE_URL}/recognition/multi/arabic/v5/ppocrv5_arabic_dict.txt` };
+    V5_CYRILLIC_MOBILE_MODEL = { detection: `${MODEL_BASE_URL}/detection/PP-OCRv5_mobile_det_infer.onnx`, recognition: `${MODEL_BASE_URL}/recognition/multi/cyrillic/v5/cyrillic_PP-OCRv5_mobile_rec_infer.onnx`, charactersDictionary: `${DICT_BASE_URL}/recognition/multi/cyrillic/v5/ppocrv5_cyrillic_dict.txt` };
+    V5_DEVANAGARI_MOBILE_MODEL = { detection: `${MODEL_BASE_URL}/detection/PP-OCRv5_mobile_det_infer.onnx`, recognition: `${MODEL_BASE_URL}/recognition/multi/devanagari/v5/devanagari_PP-OCRv5_mobile_rec_infer.onnx`, charactersDictionary: `${DICT_BASE_URL}/recognition/multi/devanagari/v5/ppocrv5_devanagari_dict.txt` };
+    V5_GREEK_MOBILE_MODEL = { detection: `${MODEL_BASE_URL}/detection/PP-OCRv5_mobile_det_infer.onnx`, recognition: `${MODEL_BASE_URL}/recognition/multi/el/v5/el_PP-OCRv5_mobile_rec_infer.onnx`, charactersDictionary: `${DICT_BASE_URL}/recognition/multi/el/v5/ppocrv5_el_dict.txt` };
+    V5_ESLAV_MOBILE_MODEL = { detection: `${MODEL_BASE_URL}/detection/PP-OCRv5_mobile_det_infer.onnx`, recognition: `${MODEL_BASE_URL}/recognition/multi/eslav/v5/eslav_PP-OCRv5_mobile_rec_infer.onnx`, charactersDictionary: `${DICT_BASE_URL}/recognition/multi/eslav/v5/ppocrv5_eslav_dict.txt` };
+    V5_KOREAN_MOBILE_MODEL = { detection: `${MODEL_BASE_URL}/detection/PP-OCRv5_mobile_det_infer.onnx`, recognition: `${MODEL_BASE_URL}/recognition/multi/korean/v5/korean_PP-OCRv5_mobile_rec_infer.onnx`, charactersDictionary: `${DICT_BASE_URL}/recognition/multi/korean/v5/ppocrv5_korean_dict.txt` };
+    V5_LATIN_MOBILE_MODEL = { detection: `${MODEL_BASE_URL}/detection/PP-OCRv5_mobile_det_infer.onnx`, recognition: `${MODEL_BASE_URL}/recognition/multi/latin/v5/latin_PP-OCRv5_mobile_rec_infer.onnx`, charactersDictionary: `${DICT_BASE_URL}/recognition/multi/latin/v5/ppocrv5_latin_dict.txt` };
+    V5_TAMIL_MOBILE_MODEL = { detection: `${MODEL_BASE_URL}/detection/PP-OCRv5_mobile_det_infer.onnx`, recognition: `${MODEL_BASE_URL}/recognition/multi/ta/v5/ta_PP-OCRv5_mobile_rec_infer.onnx`, charactersDictionary: `${DICT_BASE_URL}/recognition/multi/ta/v5/ppocrv5_ta_dict.txt` };
+    V5_TELUGU_MOBILE_MODEL = { detection: `${MODEL_BASE_URL}/detection/PP-OCRv5_mobile_det_infer.onnx`, recognition: `${MODEL_BASE_URL}/recognition/multi/te/v5/te_PP-OCRv5_mobile_rec_infer.onnx`, charactersDictionary: `${DICT_BASE_URL}/recognition/multi/te/v5/ppocrv5_te_dict.txt` };
+    V5_THAI_MOBILE_MODEL = { detection: `${MODEL_BASE_URL}/detection/PP-OCRv5_mobile_det_infer.onnx`, recognition: `${MODEL_BASE_URL}/recognition/multi/th/v5/th_PP-OCRv5_mobile_rec_infer.onnx`, charactersDictionary: `${DICT_BASE_URL}/recognition/multi/th/v5/ppocrv5_th_dict.txt` };
+    DEFAULT_MODEL = V6_SMALL_MODEL;
+    DEFAULT_MODEL_URLS = DEFAULT_MODEL;
   }
 });
 
@@ -612,21 +56,21 @@ var init_base_paddle_ocr_service = __esm({
 var ort_wasm_min_exports = {};
 __export(ort_wasm_min_exports, {
   InferenceSession: () => Un,
-  TRACE: () => Ft,
+  TRACE: () => Nt,
   TRACE_EVENT_BEGIN: () => K,
   TRACE_EVENT_END: () => Q,
   TRACE_FUNC_BEGIN: () => Z,
   TRACE_FUNC_END: () => X,
   Tensor: () => G,
   default: () => Ro,
-  env: () => O,
+  env: () => B,
   registerBackend: () => pe
 });
-var Ve, Bn, Ln, Pn, Je, E, qe, _n, wt, Se, q, pe, Dn, ht, Ye, bt, yt, gt, Et, _, Ze, O, St, Tt, It, At, Xe, Ot, Bt, Lt, Pt, _t, Dt, Y, me, Ut, xt, vt, Ct, Mt, Rt, x, Te, G, Ke, Ft, Nt, Z, X, K, Q, Qe, Ie, kt, Un, Wt, Gt, $t, zt, Ht, et, J, Ae, qt, Vt, Jt, xn, Yt, Kt, vn, Cn, R, Ce, nt, Mn, Rn, Qt, Fn, Zt, en, Xt, tn, Oe, rt, ot, Me, nn, Nn, kn, Wn, Be, I, ee, F, he, S, Re, rn, on, Gn, $n, zn, se, Hn, sn, an, ie, Fe, ae, un, fn, Ne, ke, cn, st, be, it, jn, Le, Pe, ue, Vn, dn, we, _e, De, ln, Ue, xe, ve, tt, ne, k, ye, Ge, $e, We, at, ut, fe, ce, qn, pn, mn, wn, hn, bn, yn, gn, ft, En, Yn, ze, Sn, In, Tn, He, Zn, An, jt, Ro;
+var Ve, On, Ln, Pn, Je, E, qe, _n, wt, Se, q, pe, Dn, ht, Ye, bt, yt, gt, Et, _, Ze, B, St, Tt, It, At, Xe, Bt, Ot, Lt, Pt, _t, Dt, Y, me, Ut, xt, vt, Ct, Mt, Rt, x, Te, G, Ke, Nt, Ft, Z, X, K, Q, Qe, Ie, kt, Un, Wt, Gt, $t, zt, Ht, et, J, Ae, qt, Vt, Jt, xn, Yt, Kt, vn, Cn, R, Ce, nt, Mn, Rn, Qt, Nn, Zt, en, Xt, tn, Be, rt, ot, Me, nn, Fn, kn, Wn, Oe, I, ee, N, he, S, Re, rn, on, Gn, $n, zn, se, Hn, sn, an, ie, Ne, ae, un, fn, Fe, ke, cn, st, be, it, jn, Le, Pe, ue, Vn, dn, we, _e, De, ln, Ue, xe, ve, tt, ne, k, ye, Ge, $e, We, at, ut, fe, ce, qn, pn, mn, wn, hn, bn, yn, gn, ft, En, Yn, ze, Sn, In, Tn, He, Zn, An, jt, Ro;
 var init_ort_wasm_min = __esm({
   "node_modules/onnxruntime-web/dist/ort.wasm.min.mjs"() {
     Ve = Object.defineProperty;
-    Bn = Object.getOwnPropertyDescriptor;
+    On = Object.getOwnPropertyDescriptor;
     Ln = Object.getOwnPropertyNames;
     Pn = Object.prototype.hasOwnProperty;
     Je = ((e) => typeof __require < "u" ? __require : typeof Proxy < "u" ? new Proxy(e, { get: (t, n) => (typeof __require < "u" ? __require : t)[n] }) : e)(function(e) {
@@ -638,7 +82,7 @@ var init_ort_wasm_min = __esm({
       for (var n in t) Ve(e, n, { get: t[n], enumerable: true });
     };
     _n = (e, t, n, o) => {
-      if (t && typeof t == "object" || typeof t == "function") for (let r of Ln(t)) !Pn.call(e, r) && r !== n && Ve(e, r, { get: () => t[r], enumerable: !(o = Bn(t, r)) || o.enumerable });
+      if (t && typeof t == "object" || typeof t == "function") for (let r of Ln(t)) !Pn.call(e, r) && r !== n && Ve(e, r, { get: () => t[r], enumerable: !(o = On(t, r)) || o.enumerable });
       return e;
     };
     wt = (e) => _n(Ve({}, "__esModule", { value: true }), e);
@@ -697,7 +141,7 @@ var init_ort_wasm_min = __esm({
     });
     gt = E(() => {
       "use strict";
-      yt = "1.26.0";
+      yt = "1.27.0";
     });
     Ze = E(() => {
       "use strict";
@@ -715,7 +159,7 @@ var init_ort_wasm_min = __esm({
     St = E(() => {
       "use strict";
       Ze();
-      O = _;
+      B = _;
     });
     At = E(() => {
       "use strict";
@@ -731,8 +175,8 @@ var init_ort_wasm_min = __esm({
           let l = i * r, c = 0, d = l, p = l * 2, h = -1;
           s === "RGBA" ? (c = 0, d = l, p = l * 2, h = l * 3) : s === "RGB" ? (c = 0, d = l, p = l * 2) : s === "RBG" && (c = 0, p = l, d = l * 2);
           for (let y = 0; y < i; y++) for (let A = 0; A < r; A++) {
-            let m = (e.data[c++] - f[0]) * u[0], w = (e.data[d++] - f[1]) * u[1], B = (e.data[p++] - f[2]) * u[2], g = h === -1 ? 255 : (e.data[h++] - f[3]) * u[3];
-            o.fillStyle = "rgba(" + m + "," + w + "," + B + "," + g + ")", o.fillRect(A, y, 1, 1);
+            let m = (e.data[c++] - f[0]) * u[0], w = (e.data[d++] - f[1]) * u[1], O = (e.data[p++] - f[2]) * u[2], g = h === -1 ? 255 : (e.data[h++] - f[3]) * u[3];
+            o.fillStyle = "rgba(" + m + "," + w + "," + O + "," + g + ")", o.fillRect(A, y, 1, 1);
           }
           if ("toDataURL" in n) return n.toDataURL();
           throw new Error("toDataURL is not supported");
@@ -746,9 +190,9 @@ var init_ort_wasm_min = __esm({
           u === void 0 || u.mean === void 0 ? f = [255, 255, 255, 255] : typeof u.mean == "number" ? f = [u.mean, u.mean, u.mean, u.mean] : (f = [u.mean[0], u.mean[1], u.mean[2], 255], u.mean[3] !== void 0 && (f[3] = u.mean[3])), u === void 0 || u.bias === void 0 ? l = [0, 0, 0, 0] : typeof u.bias == "number" ? l = [u.bias, u.bias, u.bias, u.bias] : (l = [u.bias[0], u.bias[1], u.bias[2], 0], u.bias[3] !== void 0 && (l[3] = u.bias[3]));
           let c = i * r;
           if (t !== void 0 && (t.format !== void 0 && s === 4 && t.format !== "RGBA" || s === 3 && t.format !== "RGB" && t.format !== "BGR")) throw new Error("Tensor format doesn't match input tensor dims");
-          let d = 4, p = 0, h = 1, y = 2, A = 3, m = 0, w = c, B = c * 2, g = -1;
-          a === "RGBA" ? (m = 0, w = c, B = c * 2, g = c * 3) : a === "RGB" ? (m = 0, w = c, B = c * 2) : a === "RBG" && (m = 0, B = c, w = c * 2), o = n.createImageData(r, i);
-          for (let T = 0; T < i * r; p += d, h += d, y += d, A += d, T++) o.data[p] = (e.data[m++] - l[0]) * f[0], o.data[h] = (e.data[w++] - l[1]) * f[1], o.data[y] = (e.data[B++] - l[2]) * f[2], o.data[A] = g === -1 ? 255 : (e.data[g++] - l[3]) * f[3];
+          let d = 4, p = 0, h = 1, y = 2, A = 3, m = 0, w = c, O = c * 2, g = -1;
+          a === "RGBA" ? (m = 0, w = c, O = c * 2, g = c * 3) : a === "RGB" ? (m = 0, w = c, O = c * 2) : a === "RBG" && (m = 0, O = c, w = c * 2), o = n.createImageData(r, i);
+          for (let T = 0; T < i * r; p += d, h += d, y += d, A += d, T++) o.data[p] = (e.data[m++] - l[0]) * f[0], o.data[h] = (e.data[w++] - l[1]) * f[1], o.data[y] = (e.data[O++] - l[2]) * f[2], o.data[A] = g === -1 ? 255 : (e.data[g++] - l[3]) * f[3];
         } else throw new Error("Can not access image data");
         return o;
       };
@@ -762,11 +206,11 @@ var init_ort_wasm_min = __esm({
         if (t.tensorLayout === "NHWC") throw new Error("NHWC Tensor layout is not supported yet");
         let { height: n, width: o } = t, r = t.norm ?? { mean: 255, bias: 0 }, i, s;
         typeof r.mean == "number" ? i = [r.mean, r.mean, r.mean, r.mean] : i = [r.mean[0], r.mean[1], r.mean[2], r.mean[3] ?? 255], typeof r.bias == "number" ? s = [r.bias, r.bias, r.bias, r.bias] : s = [r.bias[0], r.bias[1], r.bias[2], r.bias[3] ?? 0];
-        let a = t.format !== void 0 ? t.format : "RGBA", u = t.tensorFormat !== void 0 && t.tensorFormat !== void 0 ? t.tensorFormat : "RGB", f = n * o, l = u === "RGBA" ? new Float32Array(f * 4) : new Float32Array(f * 3), c = 4, d = 0, p = 1, h = 2, y = 3, A = 0, m = f, w = f * 2, B = -1;
-        a === "RGB" && (c = 3, d = 0, p = 1, h = 2, y = -1), u === "RGBA" ? B = f * 3 : u === "RBG" ? (A = 0, w = f, m = f * 2) : u === "BGR" && (w = 0, m = f, A = f * 2);
-        for (let T = 0; T < f; T++, d += c, h += c, p += c, y += c) l[A++] = (e[d] + s[0]) / i[0], l[m++] = (e[p] + s[1]) / i[1], l[w++] = (e[h] + s[2]) / i[2], B !== -1 && y !== -1 && (l[B++] = (e[y] + s[3]) / i[3]);
+        let a = t.format !== void 0 ? t.format : "RGBA", u = t.tensorFormat !== void 0 && t.tensorFormat !== void 0 ? t.tensorFormat : "RGB", f = n * o, l = u === "RGBA" ? new Float32Array(f * 4) : new Float32Array(f * 3), c = 4, d = 0, p = 1, h = 2, y = 3, A = 0, m = f, w = f * 2, O = -1;
+        a === "RGB" && (c = 3, d = 0, p = 1, h = 2, y = -1), u === "RGBA" ? O = f * 3 : u === "RBG" ? (A = 0, w = f, m = f * 2) : u === "BGR" && (w = 0, m = f, A = f * 2);
+        for (let T = 0; T < f; T++, d += c, h += c, p += c, y += c) l[A++] = (e[d] + s[0]) / i[0], l[m++] = (e[p] + s[1]) / i[1], l[w++] = (e[h] + s[2]) / i[2], O !== -1 && y !== -1 && (l[O++] = (e[y] + s[3]) / i[3]);
         return u === "RGBA" ? new x("float32", l, [1, 4, n, o]) : new x("float32", l, [1, 3, n, o]);
-      }, Ot = async (e, t) => {
+      }, Bt = async (e, t) => {
         let n = typeof HTMLImageElement < "u" && e instanceof HTMLImageElement, o = typeof ImageData < "u" && e instanceof ImageData, r = typeof ImageBitmap < "u" && e instanceof ImageBitmap, i = typeof e == "string", s, a = t ?? {}, u = () => {
           if (typeof document < "u") return document.createElement("canvas");
           if (typeof OffscreenCanvas < "u") return new OffscreenCanvas(1, 1);
@@ -817,7 +261,7 @@ var init_ort_wasm_min = __esm({
         }
         if (s !== void 0) return Xe(s, a);
         throw new Error("Input data provided is not supported - aborted tensor creation");
-      }, Bt = (e, t) => {
+      }, Ot = (e, t) => {
         let { width: n, height: o, download: r, dispose: i } = t, s = [1, o, n, 4];
         return new x({ location: "texture", type: "float32", texture: e, dims: s, download: r, dispose: i });
       }, Lt = (e, t) => {
@@ -941,10 +385,10 @@ var init_ort_wasm_min = __esm({
           this.type = r, this.dims = i, this.size = s;
         }
         static async fromImage(t, n) {
-          return Ot(t, n);
+          return Bt(t, n);
         }
         static fromTexture(t, n) {
-          return Bt(t, n);
+          return Ot(t, n);
         }
         static fromGpuBuffer(t, n) {
           return Lt(t, n);
@@ -1023,22 +467,22 @@ var init_ort_wasm_min = __esm({
     Qe = E(() => {
       "use strict";
       Ze();
-      Ft = (e, t) => {
+      Nt = (e, t) => {
         (typeof _.trace > "u" ? !_.wasm.trace : !_.trace) || console.timeStamp(`${e}::ORT::${t}`);
-      }, Nt = (e, t) => {
+      }, Ft = (e, t) => {
         let n = new Error().stack?.split(/\r\n|\r|\n/g) || [], o = false;
         for (let r = 0; r < n.length; r++) {
           if (o && !n[r].includes("TRACE_FUNC")) {
             let i = `FUNC_${e}::${n[r].trim().split(" ")[1]}`;
-            t && (i += `::${t}`), Ft("CPU", i);
+            t && (i += `::${t}`), Nt("CPU", i);
             return;
           }
           n[r].includes("TRACE_FUNC") && (o = true);
         }
       }, Z = (e) => {
-        (typeof _.trace > "u" ? !_.wasm.trace : !_.trace) || Nt("BEGIN", e);
+        (typeof _.trace > "u" ? !_.wasm.trace : !_.trace) || Ft("BEGIN", e);
       }, X = (e) => {
-        (typeof _.trace > "u" ? !_.wasm.trace : !_.trace) || Nt("END", e);
+        (typeof _.trace > "u" ? !_.wasm.trace : !_.trace) || Ft("END", e);
       }, K = (e) => {
         (typeof _.trace > "u" ? !_.wasm.trace : !_.trace) || console.time(`ORT::${e}`);
       }, Q = (e) => {
@@ -1161,7 +605,7 @@ var init_ort_wasm_min = __esm({
       "use strict";
     });
     et = {};
-    qe(et, { InferenceSession: () => Un, TRACE: () => Ft, TRACE_EVENT_BEGIN: () => K, TRACE_EVENT_END: () => Q, TRACE_FUNC_BEGIN: () => Z, TRACE_FUNC_END: () => X, Tensor: () => G, env: () => O, registerBackend: () => pe });
+    qe(et, { InferenceSession: () => Un, TRACE: () => Nt, TRACE_EVENT_BEGIN: () => K, TRACE_EVENT_END: () => Q, TRACE_FUNC_BEGIN: () => Z, TRACE_FUNC_END: () => X, Tensor: () => G, env: () => B, registerBackend: () => pe });
     J = E(() => {
       "use strict";
       bt();
@@ -1183,14 +627,14 @@ var init_ort_wasm_min = __esm({
       "use strict";
       tt();
       ee();
-      Oe();
+      Be();
       Vt = "ort-wasm-proxy-worker", Jt = globalThis.self?.name === Vt;
       Jt && (self.onmessage = (e) => {
         let { type: t, in: n } = e.data;
         try {
           switch (t) {
             case "init-wasm":
-              Be(n.wasm).then(() => {
+              Oe(n.wasm).then(() => {
                 Le(n).then(() => {
                   postMessage({ type: t });
                 }, (o) => {
@@ -1246,7 +690,7 @@ var init_ort_wasm_min = __esm({
       });
       xn = Jt ? null : (e) => new Worker(e ?? R, { type: "module", name: Vt });
     });
-    Oe = E(() => {
+    Be = E(() => {
       "use strict";
       Ae();
       Kt = typeof location > "u" ? void 0 : location.origin, vn = import.meta.url > "file:" && import.meta.url < "file;", Cn = () => {
@@ -1276,7 +720,7 @@ var init_ort_wasm_min = __esm({
       }, Rn = (e, t) => `${t ?? "./"}${e}`, Qt = async (e) => {
         let n = await (await fetch(e, { credentials: "same-origin" })).blob();
         return URL.createObjectURL(n);
-      }, Fn = async (e) => (await import(
+      }, Nn = async (e) => (await import(
         /*webpackIgnore:true*/
         /*@vite-ignore*/
         e
@@ -1293,14 +737,14 @@ var init_ort_wasm_min = __esm({
         if (r) return [void 0, Xt];
         {
           let i = "ort-wasm-simd-threaded.mjs", s = e ?? Mn(i, t), a = n && s && !nt(s, t), u = a ? await Qt(s) : s ?? Rn(i, t);
-          return [a ? u : void 0, await Fn(u)];
+          return [a ? u : void 0, await Nn(u)];
         }
       };
     });
     ee = E(() => {
       "use strict";
-      Oe();
-      ot = false, Me = false, nn = false, Nn = () => {
+      Be();
+      ot = false, Me = false, nn = false, Fn = () => {
         if (typeof SharedArrayBuffer > "u") return false;
         try {
           return typeof MessageChannel < "u" && new MessageChannel().port1.postMessage(new SharedArrayBuffer(1)), WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 4, 1, 96, 0, 0, 3, 2, 1, 0, 5, 4, 1, 3, 1, 1, 10, 11, 1, 9, 0, 65, 0, 254, 16, 2, 0, 26, 11]));
@@ -1319,7 +763,7 @@ var init_ort_wasm_min = __esm({
         } catch {
           return false;
         }
-      }, Be = async (e) => {
+      }, Oe = async (e) => {
         if (ot) return Promise.resolve();
         if (Me) throw new Error("multiple calls to 'initializeWebAssembly()' detected.");
         if (nn) throw new Error("previous call to 'initializeWebAssembly()' failed.");
@@ -1330,7 +774,7 @@ var init_ort_wasm_min = __esm({
             if (!Wn()) throw new Error("Relaxed WebAssembly SIMD is not supported in the current environment.");
           } else if (!kn()) throw new Error("WebAssembly SIMD is not supported in the current environment.");
         }
-        let o = Nn();
+        let o = Fn();
         n > 1 && !o && (typeof self < "u" && !self.crossOriginIsolated && console.warn("env.wasm.numThreads is set to " + n + ", but this will not work unless you enable crossOriginIsolated mode. See https://web.dev/cross-origin-isolation-guide/ for more info."), console.warn("WebAssembly multi-threading is not supported in the current environment. Falling back to single-threading."), e.numThreads = n = 1);
         let r = e.wasmPaths, i = typeof r == "string" ? r : void 0, s = r?.mjs, a = s?.href ?? s, u = r?.wasm, f = u?.href ?? u, l = e.wasmBinary, [c, d] = await tn(a, i, n > 1, !!l || !!f), p = false, h = [];
         if (t > 0 && h.push(new Promise((y) => {
@@ -1344,7 +788,7 @@ var init_ort_wasm_min = __esm({
           else if (a && a.indexOf("blob:") !== 0) m.locateFile = (w) => new URL(w, a).href;
           else if (c) {
             let w = Ce();
-            w && (m.locateFile = (B) => w + B);
+            w && (m.locateFile = (O) => w + O);
           }
           d(m).then((w) => {
             Me = false, ot = true, rt = w, y(), c && URL.revokeObjectURL(c);
@@ -1360,7 +804,7 @@ var init_ort_wasm_min = __esm({
     Re = E(() => {
       "use strict";
       ee();
-      F = (e, t) => {
+      N = (e, t) => {
         let n = I(), o = n.lengthBytesUTF8(e) + 1, r = n._malloc(o);
         return n.stringToUTF8(e, r, o), t.push(r), r;
       }, he = (e, t, n, o) => {
@@ -1400,8 +844,8 @@ var init_ort_wasm_min = __esm({
           else if (typeof e.logVerbosityLevel != "number" || !Number.isInteger(e.logVerbosityLevel)) throw new Error(`log verbosity level is not valid: ${e.logVerbosityLevel}`);
           e?.terminate === void 0 && (r.terminate = false);
           let i = 0;
-          return e?.tag !== void 0 && (i = F(e.tag, o)), n = t._OrtCreateRunOptions(r.logSeverityLevel, r.logVerbosityLevel, !!r.terminate, i), n === 0 && S("Can't create run options."), e?.extra !== void 0 && he(e.extra, "", /* @__PURE__ */ new WeakSet(), (s, a) => {
-            let u = F(s, o), f = F(a, o);
+          return e?.tag !== void 0 && (i = N(e.tag, o)), n = t._OrtCreateRunOptions(r.logSeverityLevel, r.logVerbosityLevel, !!r.terminate, i), n === 0 && S("Can't create run options."), e?.extra !== void 0 && he(e.extra, "", /* @__PURE__ */ new WeakSet(), (s, a) => {
+            let u = N(s, o), f = N(a, o);
             t._OrtAddRunConfigEntry(n, u, f) !== 0 && S(`Can't set a run config entry: ${s} - ${a}.`);
           }), [n, o];
         } catch (i) {
@@ -1442,7 +886,7 @@ var init_ort_wasm_min = __esm({
         let t = e.extra.session;
         t.use_ort_model_bytes_directly || (t.use_ort_model_bytes_directly = "1"), e.executionProviders && e.executionProviders.some((n) => (typeof n == "string" ? n : n.name) === "webgpu") && (e.enableMemPattern = false);
       }, se = (e, t, n, o) => {
-        let r = F(t, o), i = F(n, o);
+        let r = N(t, o), i = N(n, o);
         I()._OrtAddSessionConfigEntry(e, r, i) !== 0 && S(`Can't set a session config entry: ${t} - ${n}.`);
       }, Hn = async (e, t, n) => {
         let o = t.executionProviders;
@@ -1470,7 +914,7 @@ var init_ort_wasm_min = __esm({
             default:
               throw new Error(`not supported execution provider: ${i}`);
           }
-          let a = F(i, n), u = s.length, f = 0, l = 0;
+          let a = N(i, n), u = s.length, f = 0, l = 0;
           if (u > 0) {
             f = I()._malloc(u * I().PTR_SIZE), n.push(f), l = I()._malloc(u * I().PTR_SIZE), n.push(l);
             for (let c = 0; c < u; c++) I().setValue(f + c * I().PTR_SIZE, s[c][0], "*"), I().setValue(l + c * I().PTR_SIZE, s[c][1], "*");
@@ -1481,11 +925,11 @@ var init_ort_wasm_min = __esm({
         let t = I(), n = 0, o = [], r = e || {};
         zn(r);
         try {
-          let i = Gn(r.graphOptimizationLevel ?? "all"), s = $n(r.executionMode ?? "sequential"), a = typeof r.logId == "string" ? F(r.logId, o) : 0, u = r.logSeverityLevel ?? 2;
+          let i = Gn(r.graphOptimizationLevel ?? "all"), s = $n(r.executionMode ?? "sequential"), a = typeof r.logId == "string" ? N(r.logId, o) : 0, u = r.logSeverityLevel ?? 2;
           if (!Number.isInteger(u) || u < 0 || u > 4) throw new Error(`log severity level is not valid: ${u}`);
           let f = r.logVerbosityLevel ?? 0;
           if (!Number.isInteger(f) || f < 0 || f > 4) throw new Error(`log verbosity level is not valid: ${f}`);
-          let l = typeof r.optimizedModelFilePath == "string" ? F(r.optimizedModelFilePath, o) : 0;
+          let l = typeof r.optimizedModelFilePath == "string" ? N(r.optimizedModelFilePath, o) : 0;
           if (n = t._OrtCreateSessionOptions(i, !!r.enableCpuMemArena, !!r.enableMemPattern, s, !!r.enableProfiling, 0, a, u, f, l), n === 0 && S("Can't create session options."), r.executionProviders && await Hn(n, r, o), r.enableGraphCapture !== void 0) {
             if (typeof r.enableGraphCapture != "boolean") throw new Error(`enableGraphCapture must be a boolean value: ${r.enableGraphCapture}`);
             se(n, "enableGraphCapture", r.enableGraphCapture.toString(), o);
@@ -1493,7 +937,7 @@ var init_ort_wasm_min = __esm({
           if (r.freeDimensionOverrides) for (let [c, d] of Object.entries(r.freeDimensionOverrides)) {
             if (typeof c != "string") throw new Error(`free dimension override name must be a string: ${c}`);
             if (typeof d != "number" || !Number.isInteger(d) || d < 0) throw new Error(`free dimension override value must be a non-negative integer: ${d}`);
-            let p = F(c, o);
+            let p = N(c, o);
             t._OrtAddFreeDimensionOverride(n, p, d) !== 0 && S(`Can't set a free dimension override: ${c} - ${d}.`);
           }
           return r.extra !== void 0 && he(r.extra, "", /* @__PURE__ */ new WeakSet(), (c, d) => {
@@ -1541,7 +985,7 @@ var init_ort_wasm_min = __esm({
           default:
             throw new Error(`unsupported data type: ${e}`);
         }
-      }, Fe = (e) => {
+      }, Ne = (e) => {
         switch (e) {
           case 3:
             return "int8";
@@ -1582,7 +1026,7 @@ var init_ort_wasm_min = __esm({
       }, un = (e) => {
         switch (e) {
           case "float16":
-            return typeof Float16Array < "u" && Float16Array.from ? Float16Array : Uint16Array;
+            return typeof Float16Array < "u" ? Float16Array : Uint16Array;
           case "float32":
             return Float32Array;
           case "uint8":
@@ -1623,7 +1067,7 @@ var init_ort_wasm_min = __esm({
           default:
             throw new Error(`unsupported logging level: ${e}`);
         }
-      }, Ne = (e) => e === "float32" || e === "float16" || e === "int32" || e === "int64" || e === "uint32" || e === "uint8" || e === "bool" || e === "uint4" || e === "int4", ke = (e) => e === "float32" || e === "float16" || e === "int32" || e === "int64" || e === "uint32" || e === "uint64" || e === "int8" || e === "uint8" || e === "bool" || e === "uint4" || e === "int4", cn = (e) => {
+      }, Fe = (e) => e === "float32" || e === "float16" || e === "int32" || e === "int64" || e === "uint32" || e === "uint8" || e === "bool" || e === "uint4" || e === "int4", ke = (e) => e === "float32" || e === "float16" || e === "int32" || e === "int64" || e === "uint32" || e === "uint64" || e === "int8" || e === "uint8" || e === "bool" || e === "uint4" || e === "int4", cn = (e) => {
         switch (e) {
           case "none":
             return 0;
@@ -1775,13 +1219,13 @@ var init_ort_wasm_min = __esm({
             let [T, U, M] = dn(i, g);
             T === 0 && S("Can't get an input name."), f.push(T);
             let v = r.UTF8ToString(T);
-            h.push(v), A.push(U === 0 ? { name: v, isTensor: false } : { name: v, isTensor: true, type: Fe(U), shape: M });
+            h.push(v), A.push(U === 0 ? { name: v, isTensor: false } : { name: v, isTensor: true, type: Ne(U), shape: M });
           }
           for (let g = 0; g < d; g++) {
             let [T, U, M] = dn(i, g + c);
             T === 0 && S("Can't get an output name."), l.push(T);
             let v = r.UTF8ToString(T);
-            y.push(v), m.push(U === 0 ? { name: v, isTensor: false } : { name: v, isTensor: true, type: Fe(U), shape: M });
+            y.push(v), m.push(U === 0 ? { name: v, isTensor: false } : { name: v, isTensor: true, type: Ne(U), shape: M });
           }
           return ue.set(i, [i, f, l, null, p, false]), [i, h, y, A, m];
         } catch (c) {
@@ -1822,13 +1266,13 @@ var init_ort_wasm_min = __esm({
             h = u * m.length, p = a._malloc(h), n.push(p);
             for (let w = 0; w < m.length; w++) {
               if (typeof m[w] != "string") throw new TypeError(`tensor data at index ${w} is not a string`);
-              a.setValue(p + w * u, F(m[w], n), "*");
+              a.setValue(p + w * u, N(m[w], n), "*");
             }
           } else {
-            let w = a.webnnIsGraphInput, B = a.webnnIsGraphOutput;
-            if (f !== "string" && w && B) {
+            let w = a.webnnIsGraphInput, O = a.webnnIsGraphOutput;
+            if (f !== "string" && w && O) {
               let g = a.UTF8ToString(r);
-              if (w(o, g) || B(o, g)) {
+              if (w(o, g) || O(o, g)) {
                 let T = ie(f);
                 h = ae(T, l), d = "ml-tensor";
                 let U = a.webnnCreateTemporaryTensor, M = a.webnnUploadTensor;
@@ -1841,7 +1285,7 @@ var init_ort_wasm_min = __esm({
         }
         let y = a.stackSave(), A = a.stackAlloc(4 * l.length);
         try {
-          l.forEach((w, B) => a.setValue(A + B * u, w, u === 4 ? "i32" : "i64"));
+          l.forEach((w, O) => a.setValue(A + O * u, w, u === 4 ? "i32" : "i64"));
           let m = a._OrtCreateTensor(ie(f), p, h, A, l.length, cn(d));
           m === 0 && S(`Can't create tensor for input/output. session=${o}, index=${i}.`), t.push(m);
         } finally {
@@ -1850,17 +1294,17 @@ var init_ort_wasm_min = __esm({
       }, Ue = async (e, t, n, o, r, i) => {
         let s = I(), a = s.PTR_SIZE, u = ue.get(e);
         if (!u) throw new Error(`cannot run inference. invalid session id: ${e}`);
-        let f = u[0], l = u[1], c = u[2], d = u[3], p = u[4], h = u[5], y = t.length, A = o.length, m = 0, w = [], B = [], g = [], T = [], U = [], M = s.stackSave(), v = s.stackAlloc(y * a), de = s.stackAlloc(y * a), re = s.stackAlloc(A * a), ct = s.stackAlloc(A * a);
+        let f = u[0], l = u[1], c = u[2], d = u[3], p = u[4], h = u[5], y = t.length, A = o.length, m = 0, w = [], O = [], g = [], T = [], U = [], M = s.stackSave(), v = s.stackAlloc(y * a), de = s.stackAlloc(y * a), re = s.stackAlloc(A * a), ct = s.stackAlloc(A * a);
         try {
           [m, w] = rn(i), K("wasm prepareInputOutputTensor");
-          for (let b = 0; b < y; b++) await ln(n[b], B, T, e, l[t[b]], t[b], p);
+          for (let b = 0; b < y; b++) await ln(n[b], O, T, e, l[t[b]], t[b], p);
           for (let b = 0; b < A; b++) await ln(r[b], g, T, e, c[o[b]], y + o[b], p);
           Q("wasm prepareInputOutputTensor");
-          for (let b = 0; b < y; b++) s.setValue(v + b * a, B[b], "*"), s.setValue(de + b * a, l[t[b]], "*");
+          for (let b = 0; b < y; b++) s.setValue(v + b * a, O[b], "*"), s.setValue(de + b * a, l[t[b]], "*");
           for (let b = 0; b < A; b++) s.setValue(re + b * a, g[b], "*"), s.setValue(ct + b * a, c[o[b]], "*");
           s.jsepOnRunStart?.(f), s.webnnOnRunStart?.(f);
-          let N;
-          N = await s._OrtRun(f, de, v, y, ct, A, re, m), N !== 0 && S("failed to call OrtRun().");
+          let F;
+          F = await s._OrtRun(f, de, v, y, ct, A, re, m), F !== 0 && S("failed to call OrtRun().");
           let z = [], dt = [];
           K("wasm ProcessOutputTensor");
           for (let b = 0; b < A; b++) {
@@ -1874,11 +1318,11 @@ var init_ort_wasm_min = __esm({
               s._OrtGetTensorData(W, $, $ + a, $ + 2 * a, $ + 3 * a) !== 0 && S(`Can't access output tensor data on index ${b}.`);
               let je = a === 4 ? "i32" : "i64", ge = Number(s.getValue($, je));
               C = s.getValue($ + a, "*");
-              let pt = s.getValue($ + a * 2, "*"), On = Number(s.getValue($ + a * 3, je)), H = [];
-              for (let D = 0; D < On; D++) H.push(Number(s.getValue(pt + D * a, je)));
+              let pt = s.getValue($ + a * 2, "*"), Bn = Number(s.getValue($ + a * 3, je)), H = [];
+              for (let D = 0; D < Bn; D++) H.push(Number(s.getValue(pt + D * a, je)));
               s._OrtFree(pt) !== 0 && S("Can't free memory for tensor dims.");
               let j = H.reduce((D, L) => D * L, 1);
-              P = Fe(ge);
+              P = Ne(ge);
               let le = d?.outputPreferredLocations[o[b]];
               if (P === "string") {
                 if (le === "gpu-buffer" || le === "ml-tensor") throw new Error("String tensor is not supported on GPU.");
@@ -1892,7 +1336,7 @@ var init_ort_wasm_min = __esm({
                 let D = s.jsepGetBuffer;
                 if (!D) throw new Error('preferredLocation "gpu-buffer" is not supported without using WebGPU.');
                 let L = D(C), V = ae(ge, j);
-                if (V === void 0 || !Ne(P)) throw new Error(`Unsupported data type: ${P}`);
+                if (V === void 0 || !Fe(P)) throw new Error(`Unsupported data type: ${P}`);
                 oe = true, z.push([P, H, { gpuBuffer: L, download: s.jsepCreateDownloader(L, V, P), dispose: () => {
                   s._OrtReleaseTensor(W) !== 0 && S("Can't release tensor.");
                 } }, "gpu-buffer"]);
@@ -1923,7 +1367,7 @@ var init_ort_wasm_min = __esm({
           for (let [b, W] of await Promise.all(dt)) z[b][2] = W;
           return Q("wasm ProcessOutputTensor"), z;
         } finally {
-          s.webnnOnRunEnd?.(f), s.stackRestore(M), B.forEach((N) => s._OrtReleaseTensor(N)), g.forEach((N) => s._OrtReleaseTensor(N)), T.forEach((N) => s._free(N)), m !== 0 && s._OrtReleaseRunOptions(m), w.forEach((N) => s._free(N));
+          s.webnnOnRunEnd?.(f), s.stackRestore(M), O.forEach((F) => s._OrtReleaseTensor(F)), g.forEach((F) => s._OrtReleaseTensor(F)), T.forEach((F) => s._free(F)), m !== 0 && s._OrtReleaseRunOptions(m), w.forEach((F) => s._free(F));
         }
       }, xe = (e) => {
         let t = I(), n = ue.get(e);
@@ -1944,8 +1388,8 @@ var init_ort_wasm_min = __esm({
       J();
       tt();
       ee();
-      Oe();
-      ne = () => !!O.wasm.proxy && typeof document < "u", ye = false, Ge = false, $e = false, ut = /* @__PURE__ */ new Map(), fe = (e, t) => {
+      Be();
+      ne = () => !!B.wasm.proxy && typeof document < "u", ye = false, Ge = false, $e = false, ut = /* @__PURE__ */ new Map(), fe = (e, t) => {
         let n = ut.get(e);
         n ? n.push(t) : ut.set(e, [t]);
       }, ce = () => {
@@ -1975,7 +1419,7 @@ var init_ort_wasm_min = __esm({
             k?.terminate(), en().then(([n, o]) => {
               try {
                 k = o, k.onerror = (i) => t(i), k.onmessage = qn, at = [e, t];
-                let r = { type: "init-wasm", in: O };
+                let r = { type: "init-wasm", in: B };
                 if (!r.in.wasm.wasmPaths && n) {
                   let i = Ce();
                   i && (r.in.wasm.wasmPaths = i);
@@ -1987,7 +1431,7 @@ var init_ort_wasm_min = __esm({
             }, t);
           });
           try {
-            await Be(O.wasm), await Le(O), Ge = true;
+            await Oe(B.wasm), await Le(B), Ge = true;
           } catch (e) {
             throw $e = true, e;
           } finally {
@@ -1997,10 +1441,10 @@ var init_ort_wasm_min = __esm({
       }, mn = async (e) => {
         if (ne()) return ce(), new Promise((t, n) => {
           fe("init-ep", [t, n]);
-          let o = { type: "init-ep", in: { epName: e, env: O } };
+          let o = { type: "init-ep", in: { epName: e, env: B } };
           k.postMessage(o);
         });
-        await Pe(O, e);
+        await Pe(B, e);
       }, wn = async (e) => ne() ? (ce(), new Promise((t, n) => {
         fe("copy-from", [t, n]);
         let o = { type: "copy-from", in: { buffer: e } };
@@ -2064,7 +1508,7 @@ var init_ort_wasm_min = __esm({
             return new G(e[0], e[2], e[1]);
           case "gpu-buffer": {
             let t = e[0];
-            if (!Ne(t)) throw new Error(`not supported data type: ${t} for deserializing GPU tensor`);
+            if (!Fe(t)) throw new Error(`not supported data type: ${t} for deserializing GPU tensor`);
             let { gpuBuffer: n, download: o, dispose: r } = e[2];
             return G.fromGpuBuffer(n, { dataType: t, dims: e[1], download: o, dispose: r });
           }
@@ -2122,12 +1566,12 @@ var init_ort_wasm_min = __esm({
       ft();
       Sn();
       Tn = () => {
-        (typeof O.wasm.initTimeout != "number" || O.wasm.initTimeout < 0) && (O.wasm.initTimeout = 0);
-        let e = O.wasm.simd;
-        if (typeof e != "boolean" && e !== void 0 && e !== "fixed" && e !== "relaxed" && (console.warn(`Property "env.wasm.simd" is set to unknown value "${e}". Reset it to \`false\` and ignore SIMD feature checking.`), O.wasm.simd = false), typeof O.wasm.proxy != "boolean" && (O.wasm.proxy = false), typeof O.wasm.trace != "boolean" && (O.wasm.trace = false), typeof O.wasm.numThreads != "number" || !Number.isInteger(O.wasm.numThreads) || O.wasm.numThreads <= 0) if (typeof self < "u" && !self.crossOriginIsolated) O.wasm.numThreads = 1;
+        (typeof B.wasm.initTimeout != "number" || B.wasm.initTimeout < 0) && (B.wasm.initTimeout = 0);
+        let e = B.wasm.simd;
+        if (typeof e != "boolean" && e !== void 0 && e !== "fixed" && e !== "relaxed" && (console.warn(`Property "env.wasm.simd" is set to unknown value "${e}". Reset it to \`false\` and ignore SIMD feature checking.`), B.wasm.simd = false), typeof B.wasm.proxy != "boolean" && (B.wasm.proxy = false), typeof B.wasm.trace != "boolean" && (B.wasm.trace = false), typeof B.wasm.numThreads != "number" || !Number.isInteger(B.wasm.numThreads) || B.wasm.numThreads <= 0) if (typeof self < "u" && !self.crossOriginIsolated) B.wasm.numThreads = 1;
         else {
           let t = typeof navigator > "u" ? Je("node:os").cpus().length : navigator.hardwareConcurrency;
-          O.wasm.numThreads = Math.min(4, Math.ceil((t || 1) / 2));
+          B.wasm.numThreads = Math.min(4, Math.ceil((t || 1) / 2));
         }
       }, He = class {
         async init(t) {
@@ -2142,13 +1586,894 @@ var init_ort_wasm_min = __esm({
     J();
     J();
     J();
-    jt = "1.26.0";
+    jt = "1.27.0";
     Ro = et;
     {
       let e = (An(), wt(In)).wasmBackend;
       pe("cpu", e, 10), pe("wasm", e, 10);
     }
-    Object.defineProperty(O.versions, "web", { value: jt, enumerable: true });
+    Object.defineProperty(B.versions, "web", { value: jt, enumerable: true });
+  }
+});
+
+// node_modules/ppu-paddle-ocr/constants.js
+var DEFAULT_DEBUGGING_OPTIONS, DEFAULT_DETECTION_OPTIONS, DEFAULT_RECOGNITION_OPTIONS, DEFAULT_SESSION_OPTIONS, DEFAULT_PROCESSING_ENGINE, DEFAULT_PROCESSING_OPTIONS, DEFAULT_PADDLE_OPTIONS;
+var init_constants = __esm({
+  "node_modules/ppu-paddle-ocr/constants.js"() {
+    DEFAULT_DEBUGGING_OPTIONS = { verbose: false, debug: false, debugFolder: "out" };
+    DEFAULT_DETECTION_OPTIONS = { mean: [0.485, 0.456, 0.406], stdDeviation: [0.229, 0.224, 0.225], maxSideLength: 640, minimumAreaThreshold: 50, paddingVertical: 0.4, paddingHorizontal: 0.6 };
+    DEFAULT_RECOGNITION_OPTIONS = { imageHeight: 48, strategy: "per-box", crossLineWidthFactor: 1, charactersDictionary: [] };
+    DEFAULT_SESSION_OPTIONS = { executionProviders: ["cpu"], graphOptimizationLevel: "all", enableCpuMemArena: true, enableMemPattern: true, executionMode: "sequential", interOpNumThreads: 0, intraOpNumThreads: 0 };
+    DEFAULT_PROCESSING_ENGINE = "opencv";
+    DEFAULT_PROCESSING_OPTIONS = { engine: DEFAULT_PROCESSING_ENGINE };
+    DEFAULT_PADDLE_OPTIONS = { model: {}, detection: DEFAULT_DETECTION_OPTIONS, recognition: DEFAULT_RECOGNITION_OPTIONS, debugging: DEFAULT_DEBUGGING_OPTIONS, session: DEFAULT_SESSION_OPTIONS, processing: DEFAULT_PROCESSING_OPTIONS };
+  }
+});
+
+// node_modules/ppu-paddle-ocr/utils.js
+function deepMerge(target, ...sources) {
+  if (!sources.length) return target;
+  let source = sources.shift();
+  if (isObject(target) && isObject(source)) {
+    for (let key in source) {
+      if (Object.prototype.hasOwnProperty.call(source, key)) {
+        if (key === "__proto__" || key === "constructor" || key === "prototype") {
+          continue;
+        }
+        let sourceValue = source[key];
+        let targetValue = target[key];
+        if (isObject(sourceValue)) {
+          if (!targetValue || !isObject(targetValue)) {
+            target[key] = {};
+          }
+          deepMerge(target[key], sourceValue);
+        } else if (sourceValue !== void 0) {
+          target[key] = sourceValue;
+        }
+      }
+    }
+  }
+  return deepMerge(target, ...sources);
+}
+async function fetchArrayBufferWithRetry(url, options = {}) {
+  const { timeoutMs = 3e5, retries = 2 } = options;
+  let lastError;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      let response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} ${response.statusText}`);
+      }
+      return await response.arrayBuffer();
+    } catch (error) {
+      lastError = error;
+      if (attempt < retries) {
+        await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+      }
+    }
+  }
+  throw new Error(`Failed to fetch ${url} after ${retries + 1} attempt(s): ${String(lastError)}`);
+}
+function parseDictionary(source) {
+  let content = typeof source === "string" ? source : new TextDecoder("utf-8").decode(source);
+  return content.split(/\r?\n/);
+}
+function isObject(item) {
+  return item !== null && typeof item === "object" && !Array.isArray(item) && !(item instanceof Date) && !(item instanceof RegExp) && !(item instanceof ArrayBuffer) && !ArrayBuffer.isView(item);
+}
+var init_utils = __esm({
+  "node_modules/ppu-paddle-ocr/utils.js"() {
+  }
+});
+
+// node_modules/ppu-paddle-ocr/core/detection/box-geometry.js
+function calculateResizeDimensions(originalWidth, originalHeight, maxSideLength) {
+  let resizeW = originalWidth;
+  let resizeH = originalHeight;
+  let ratio = 1;
+  if (Math.max(resizeH, resizeW) > maxSideLength) {
+    ratio = maxSideLength / (resizeH > resizeW ? resizeH : resizeW);
+    resizeW = Math.round(resizeW * ratio);
+    resizeH = Math.round(resizeH * ratio);
+  }
+  return { width: resizeW, height: resizeH, ratio };
+}
+function applyPaddingToRect(rect, maxWidth, maxHeight, paddingVertical, paddingHorizontal) {
+  let verticalPadding = Math.round(rect.height * paddingVertical);
+  let horizontalPadding = Math.round(rect.height * paddingHorizontal);
+  let x2 = rect.x - horizontalPadding;
+  let y = rect.y - verticalPadding;
+  x2 = Math.max(0, x2);
+  y = Math.max(0, y);
+  let rightEdge = Math.min(maxWidth, rect.x + rect.width + horizontalPadding);
+  let bottomEdge = Math.min(maxHeight, rect.y + rect.height + verticalPadding);
+  let width = rightEdge - x2;
+  let height = bottomEdge - y;
+  return { x: x2, y, width, height };
+}
+function convertToOriginalCoordinates(rect, resizeRatio, originalWidth, originalHeight) {
+  let scaledX = rect.x / resizeRatio;
+  let scaledY = rect.y / resizeRatio;
+  let scaledWidth = rect.width / resizeRatio;
+  let scaledHeight = rect.height / resizeRatio;
+  let x2 = Math.max(0, Math.round(scaledX));
+  let y = Math.max(0, Math.round(scaledY));
+  let width = Math.min(originalWidth - x2, Math.round(scaledWidth));
+  let height = Math.min(originalHeight - y, Math.round(scaledHeight));
+  return { x: x2, y, width, height };
+}
+function extractBoxesFromContours(contours, width, height, resizeRatio, originalWidth, originalHeight, minBoxArea, paddingVertical, paddingHorizontal) {
+  let boxes = [];
+  contours.iterate((contour) => {
+    let rect = contours.getRect(contour);
+    if (rect.width * rect.height <= minBoxArea) {
+      return;
+    }
+    let paddedRect = applyPaddingToRect(rect, width, height, paddingVertical, paddingHorizontal);
+    let finalBox = convertToOriginalCoordinates(paddedRect, resizeRatio, originalWidth, originalHeight);
+    if (finalBox.width > 5 && finalBox.height > 5) {
+      boxes.push(finalBox);
+    }
+  });
+  return boxes;
+}
+function extractBoxesFromRegions(regions, originalWidth, originalHeight) {
+  let boxes = [];
+  for (let region of regions) {
+    const { bbox } = region;
+    let box = { x: Math.max(0, bbox.x0), y: Math.max(0, bbox.y0), width: bbox.x1 - bbox.x0, height: bbox.y1 - bbox.y0 };
+    if (box.x + box.width > originalWidth) {
+      box.width = originalWidth - box.x;
+    }
+    if (box.y + box.height > originalHeight) {
+      box.height = originalHeight - box.y;
+    }
+    if (box.width > 5 && box.height > 5) {
+      boxes.push(box);
+    }
+  }
+  return boxes;
+}
+var init_box_geometry = __esm({
+  "node_modules/ppu-paddle-ocr/core/detection/box-geometry.js"() {
+  }
+});
+
+// node_modules/ppu-paddle-ocr/core/detection/image-tensor.js
+function imageToTensor(canvas, width, height, mean, stdDeviation) {
+  let ctx = canvas.getContext("2d");
+  let imageData = ctx.getImageData(0, 0, width, height);
+  let rgbaData = imageData.data;
+  let channelSize = height * width;
+  let tensor = new Float32Array(NUM_CHANNELS * channelSize);
+  let meanR = mean[0] ?? 0.485;
+  let meanG = mean[1] ?? 0.456;
+  let meanB = mean[2] ?? 0.406;
+  let stdR = stdDeviation[0] ?? 0.229;
+  let stdG = stdDeviation[1] ?? 0.224;
+  let stdB = stdDeviation[2] ?? 0.225;
+  let scaleR = 1 / (255 * stdR);
+  let scaleG = 1 / (255 * stdG);
+  let scaleB = 1 / (255 * stdB);
+  let shiftR = meanR / stdR;
+  let shiftG = meanG / stdG;
+  let shiftB = meanB / stdB;
+  let gOffset = channelSize;
+  let bOffset = channelSize * 2;
+  for (let i = 0, rgbaIdx = 0; i < channelSize; i++, rgbaIdx += 4) {
+    let r = rgbaData[rgbaIdx];
+    let g = rgbaData[rgbaIdx + 1];
+    let b = rgbaData[rgbaIdx + 2];
+    tensor[i] = r * scaleR - shiftR;
+    tensor[gOffset + i] = g * scaleG - shiftG;
+    tensor[bOffset + i] = b * scaleB - shiftB;
+  }
+  return tensor;
+}
+function tensorToCanvas(tensor, width, height, createCanvas) {
+  let canvas = createCanvas(width, height);
+  let ctx = canvas.getContext("2d");
+  let imageData = ctx.createImageData(width, height);
+  let data = imageData.data;
+  let totalPixels = width * height;
+  for (let i = 0; i < totalPixels; i++) {
+    let probability = tensor[i] || 0;
+    let grayValue = Math.round(probability * 255);
+    let pixelIdx = i * 4;
+    data[pixelIdx] = grayValue;
+    data[pixelIdx + 1] = grayValue;
+    data[pixelIdx + 2] = grayValue;
+    data[pixelIdx + 3] = 255;
+  }
+  ctx.putImageData(imageData, 0, 0);
+  return canvas;
+}
+var NUM_CHANNELS;
+var init_image_tensor = __esm({
+  "node_modules/ppu-paddle-ocr/core/detection/image-tensor.js"() {
+    NUM_CHANNELS = 3;
+  }
+});
+
+// node_modules/ppu-paddle-ocr/core/base-detection.service.js
+var BaseDetectionService;
+var init_base_detection_service = __esm({
+  "node_modules/ppu-paddle-ocr/core/base-detection.service.js"() {
+    init_constants();
+    init_box_geometry();
+    init_image_tensor();
+    BaseDetectionService = class {
+      options;
+      debugging;
+      session;
+      platform;
+      engine;
+      lastDetectionCanvas = null;
+      constructor(platform, session, options = {}, debugging = {}, engine = "opencv") {
+        this.platform = platform;
+        this.session = session;
+        this.options = { ...DEFAULT_DETECTION_OPTIONS, ...options };
+        this.debugging = { ...DEFAULT_DEBUGGING_OPTIONS, ...debugging };
+        if (engine === "opencv" && !this.platform.imageProcessor) {
+          this.engine = "canvas-native";
+        } else {
+          this.engine = engine;
+        }
+      }
+      log(message) {
+        if (this.debugging.verbose) {
+          console.log(`[DetectionService] ${message}`);
+        }
+      }
+      async run(image) {
+        this.log("Starting text detection process");
+        try {
+          let canvasToProcess;
+          if (this.platform.isCanvas(image)) {
+            canvasToProcess = image;
+          } else if (this.engine === "opencv" && this.platform.imageProcessor) {
+            canvasToProcess = await this.platform.imageProcessor.prepareCanvas(image);
+          } else {
+            canvasToProcess = await this.platform.canvas.prepareCanvas(image);
+          }
+          let input = await this.preprocessDetection(canvasToProcess);
+          let detection = await this.runInference(input.tensor, input.width, input.height);
+          if (!detection) {
+            console.error("Text detection failed (output tensor is null)");
+            return [];
+          }
+          let detectedBoxes = this.postprocessDetection(detection, input);
+          if (this.debugging.debug && this.debugging.debugFolder && this.lastDetectionCanvas) {
+            await this.debugDetectionCanvas(this.lastDetectionCanvas, input.width, input.height);
+            await this.debugDetectedBoxes(canvasToProcess, detectedBoxes);
+          }
+          this.log(`Detected ${detectedBoxes.length} text boxes in image`);
+          return detectedBoxes;
+        } catch (error) {
+          console.error("Error during text detection:", error instanceof Error ? error.message : String(error));
+          return [];
+        }
+      }
+      async preprocessDetection(canvas) {
+        const { width: originalWidth, height: originalHeight } = canvas;
+        let maxSideLength = this.options.maxSideLength ?? 640;
+        const { width: resizeW, height: resizeH, ratio: resizeRatio } = calculateResizeDimensions(originalWidth, originalHeight, maxSideLength);
+        let width = Math.ceil(resizeW / 32) * 32;
+        let height = Math.ceil(resizeH / 32) * 32;
+        let paddedCanvas = this.platform.createCanvas(width, height);
+        let paddedCtx = paddedCanvas.getContext("2d");
+        paddedCtx.drawImage(canvas, 0, 0, originalWidth, originalHeight, 0, 0, resizeW, resizeH);
+        let mean = this.options.mean ?? [0.485, 0.456, 0.406];
+        let stdDeviation = this.options.stdDeviation ?? [0.229, 0.224, 0.225];
+        let tensor = imageToTensor(paddedCanvas, width, height, mean, stdDeviation);
+        this.log(`Detection preprocessed: original(${originalWidth}x${originalHeight}), model_input(${width}x${height}), resize_ratio: ${resizeRatio.toFixed(4)}, engine: ${this.engine}`);
+        return { tensor, width, height, resizeRatio, originalWidth, originalHeight };
+      }
+      async runInference(tensor, width, height) {
+        let inputTensor;
+        try {
+          this.log("Running detection inference...");
+          inputTensor = new this.platform.ort.Tensor("float32", tensor, [1, 3, height, width]);
+          let feeds = { x: inputTensor };
+          let results = await this.session.run(feeds);
+          let outputTensor = results[this.session.outputNames[0] || "sigmoid_0.tmp_0"];
+          this.log("Detection inference complete!");
+          if (!outputTensor) {
+            console.error(`Output tensor ${this.session.outputNames[0]} not found in detection results`);
+            return null;
+          }
+          return outputTensor.data;
+        } catch (error) {
+          console.error("Error during model inference:", error instanceof Error ? error.message : String(error));
+          throw error;
+        } finally {
+          inputTensor?.dispose();
+        }
+      }
+      postprocessDetection(detection, input, minBoxAreaOnPadded = this.options.minimumAreaThreshold ?? 50, paddingVertical = this.options.paddingVertical || 0.4, paddingHorizontal = this.options.paddingHorizontal || 0.6) {
+        this.log("Post-processing detection results...");
+        const { width, height, resizeRatio, originalWidth, originalHeight } = input;
+        let canvas = tensorToCanvas(detection, width, height, this.platform.createCanvas.bind(this.platform));
+        this.lastDetectionCanvas = canvas;
+        if (this.engine === "opencv" && this.platform.imageProcessor) {
+          return this.postprocessWithOpenCV(canvas, width, height, resizeRatio, originalWidth, originalHeight, minBoxAreaOnPadded, paddingVertical, paddingHorizontal);
+        }
+        return this.postprocessWithCanvasNative(canvas, resizeRatio, originalWidth, originalHeight, minBoxAreaOnPadded, paddingVertical, paddingHorizontal);
+      }
+      postprocessWithOpenCV(canvas, width, height, resizeRatio, originalWidth, originalHeight, minBoxAreaOnPadded, paddingVertical, paddingHorizontal) {
+        let ip = this.platform.imageProcessor;
+        let processor = new ip.ImageProcessor(canvas);
+        try {
+          processor.grayscale().convert({ rtype: ip.cv.CV_8UC1 });
+          let contours = new ip.Contours(processor.toMat(), { mode: ip.cv.RETR_LIST, method: ip.cv.CHAIN_APPROX_SIMPLE });
+          let boxes = extractBoxesFromContours(contours, width, height, resizeRatio, originalWidth, originalHeight, minBoxAreaOnPadded, paddingVertical, paddingHorizontal);
+          contours.destroy();
+          this.log(`Found ${boxes.length} potential text boxes (opencv)`);
+          return boxes;
+        } finally {
+          processor.destroy();
+        }
+      }
+      postprocessWithCanvasNative(canvas, resizeRatio, originalWidth, originalHeight, minBoxAreaOnPadded, paddingVertical, paddingHorizontal) {
+        let processor = this.platform.canvas.createProcessor(canvas).grayscale().threshold({ thresh: 127 });
+        let regions = processor.findRegions({ foreground: "light", minArea: minBoxAreaOnPadded, thresh: 0, padding: { vertical: paddingVertical, horizontal: paddingHorizontal }, scale: 1 / resizeRatio });
+        let boxes = extractBoxesFromRegions(regions, originalWidth, originalHeight);
+        this.log(`Found ${boxes.length} potential text boxes (canvas-native)`);
+        return boxes;
+      }
+      async debugDetectionCanvas(canvas, _width, _height) {
+        let dir = this.debugging.debugFolder ?? "";
+        await this.platform.saveDebugImage(canvas, "detection-debug", dir);
+        this.log(`Probability map visualized and saved to: ${dir}`);
+      }
+      async debugDetectedBoxes(image, boxes) {
+        let canvas = this.platform.isCanvas(image) ? image : await this.platform.canvas.prepareCanvas(image);
+        let ctx = canvas.getContext("2d");
+        for (let box of boxes) {
+          const { x: x2, y, width, height } = box;
+          this.platform.canvas.getToolkit().drawLine({ ctx, x: x2, y, width, height });
+        }
+        let dir = this.debugging.debugFolder ?? "";
+        await this.platform.saveDebugImage(canvas, "boxes-debug", dir);
+        this.log(`Boxes visualized and saved to: ${dir}`);
+      }
+    };
+  }
+});
+
+// node_modules/ppu-paddle-ocr/core/batch.js
+function toAbortError(signal) {
+  return signal.reason instanceof Error ? signal.reason : new DOMException("The batch operation was aborted.", "AbortError");
+}
+function toAsyncIterator(inputs) {
+  if (Symbol.asyncIterator in inputs) {
+    return inputs[Symbol.asyncIterator]();
+  }
+  let sync = inputs[Symbol.iterator]();
+  return { next: () => Promise.resolve(sync.next()), return: (value) => Promise.resolve(sync.return?.(value) ?? { done: true, value: void 0 }) };
+}
+async function runPool(inputs, options, task, onSettle) {
+  const { settle, signal } = options;
+  let concurrency = Math.max(1, Math.floor(options.concurrency));
+  if (signal?.aborted) throw toAbortError(signal);
+  let nextIndex = 0;
+  let done = 0;
+  let stopped = false;
+  let failed = false;
+  let failure;
+  let array = Array.isArray(inputs) ? inputs : null;
+  let iterator = array ? null : toAsyncIterator(inputs);
+  let lock = Promise.resolve();
+  let nextItem = async () => {
+    let previous = lock;
+    let release;
+    lock = new Promise((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      return await iterator.next();
+    } finally {
+      release();
+    }
+  };
+  let onAbort = () => {
+    stopped = true;
+  };
+  signal?.addEventListener("abort", onAbort, { once: true });
+  let worker = async () => {
+    while (!stopped) {
+      let item;
+      let index;
+      if (array) {
+        if (nextIndex >= array.length) return;
+        index = nextIndex++;
+        item = array[index];
+      } else {
+        let next = await nextItem();
+        if (next.done || stopped) return;
+        index = nextIndex++;
+        item = next.value;
+      }
+      try {
+        let value = await task(item, index);
+        if (stopped) return;
+        onSettle({ index, status: "fulfilled", value });
+      } catch (reason) {
+        if (settle) {
+          onSettle({ index, status: "rejected", reason });
+        } else {
+          stopped = true;
+          failed = true;
+          failure = reason;
+          return;
+        }
+      } finally {
+        done++;
+        options.onProgress?.(done, options.total);
+      }
+    }
+  };
+  try {
+    await Promise.all(Array.from({ length: concurrency }, () => worker()));
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
+    await iterator?.return?.();
+  }
+  if (signal?.aborted) throw toAbortError(signal);
+  if (failed) throw failure;
+}
+function createAsyncQueue() {
+  let items = [];
+  let wake = null;
+  let closed = false;
+  let failure = null;
+  let notify = () => {
+    let w = wake;
+    wake = null;
+    w?.();
+  };
+  return { push(item) {
+    items.push(item);
+    notify();
+  }, close() {
+    closed = true;
+    notify();
+  }, fail(error) {
+    failure = { error };
+    closed = true;
+    notify();
+  }, async *drain() {
+    while (true) {
+      while (items.length > 0) {
+        yield items.shift();
+      }
+      if (failure) throw failure.error;
+      if (closed) return;
+      await new Promise((resolve) => {
+        wake = resolve;
+      });
+    }
+  } };
+}
+var init_batch = __esm({
+  "node_modules/ppu-paddle-ocr/core/batch.js"() {
+  }
+});
+
+// node_modules/ppu-paddle-ocr/core/detection/crop-boxes.js
+async function cropDetectedBoxes(platform, canvas, boxes, options) {
+  let toolkit = platform.canvas.getToolkit();
+  let crops = [];
+  for (const [index, box] of boxes.entries()) {
+    let cropCanvas = toolkit.crop({ bbox: { x0: box.x, y0: box.y, x1: box.x + box.width, y1: box.y + box.height }, canvas });
+    if (options.saveCropsTo && platform.saveImage) {
+      let filename = `crop_${String(index).padStart(3, "0")}.png`;
+      await platform.saveImage(cropCanvas, [options.saveCropsTo, filename].join(platform.pathSeparator));
+    }
+    if (options.crop) {
+      crops.push(await canvasToPngBuffer(cropCanvas));
+    }
+  }
+  return crops;
+}
+async function canvasToPngBuffer(canvas) {
+  let c = canvas;
+  if (typeof c.toBuffer === "function") {
+    let buffer = c.toBuffer("image/png");
+    return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+  }
+  if (typeof c.convertToBlob === "function") {
+    let blob = await c.convertToBlob({ type: "image/png" });
+    return blob.arrayBuffer();
+  }
+  if (typeof c.toBlob === "function") {
+    let toBlob = c.toBlob.bind(c);
+    let blob = await new Promise((resolve, reject) => toBlob((b) => b ? resolve(b) : reject(new Error("Canvas toBlob() returned null")), "image/png"));
+    return blob.arrayBuffer();
+  }
+  throw new Error("Canvas cannot be encoded to a PNG buffer on this platform");
+}
+var init_crop_boxes = __esm({
+  "node_modules/ppu-paddle-ocr/core/detection/crop-boxes.js"() {
+  }
+});
+
+// node_modules/ppu-paddle-ocr/core/recognition/line-grouping.js
+function flattenResults(results) {
+  if (results.length === 0) {
+    return { text: "", results: [], confidence: 0 };
+  }
+  let text = results.map((r) => r.text).join(" ");
+  let avgConfidence = results.reduce((sum, r) => sum + r.confidence, 0) / results.length;
+  return { text, results, confidence: avgConfidence };
+}
+function groupResultsByLine(results) {
+  if (results.length === 0) {
+    return { text: "", lines: [], confidence: 0 };
+  }
+  let lines = [];
+  let currentLine = [];
+  let firstResult = results[0];
+  if (!firstResult) return { text: "", lines: [], confidence: 0 };
+  let currentY = firstResult.box.y;
+  let avgHeight = firstResult.box.height;
+  for (let result of results) {
+    const { box } = result;
+    if (Math.abs(box.y - currentY) < avgHeight / 2) {
+      currentLine.push(result);
+      avgHeight = (avgHeight * (currentLine.length - 1) + box.height) / currentLine.length;
+    } else {
+      currentLine.sort((a, b) => a.box.x - b.box.x);
+      lines.push(currentLine);
+      currentLine = [result];
+      currentY = box.y;
+      avgHeight = box.height;
+    }
+  }
+  if (currentLine.length > 0) {
+    currentLine.sort((a, b) => a.box.x - b.box.x);
+    lines.push(currentLine);
+  }
+  let fullText = lines.map((line) => line.map((r) => r.text).join(" ")).join(`
+`);
+  let totalConfidence = lines.reduce((sum, line) => sum + line.reduce((s, r) => s + r.confidence, 0), 0);
+  let totalItems = lines.reduce((sum, line) => sum + line.length, 0);
+  return { text: fullText, lines, confidence: totalItems > 0 ? totalConfidence / totalItems : 0 };
+}
+function groupBoxesIntoLines(boxes) {
+  if (boxes.length === 0) return [];
+  let sorted = [...boxes].sort((a, b) => a.box.y - b.box.y || a.box.x - b.box.x);
+  let lines = [];
+  let firstSorted = sorted[0];
+  if (!firstSorted) return [];
+  let currentLine = [firstSorted];
+  let currentLineHeightSum = firstSorted.box.height;
+  let avgHeight = firstSorted.box.height;
+  for (let i = 1; i < sorted.length; i++) {
+    let current = sorted[i];
+    let previous = sorted[i - 1];
+    if (!current || !previous) continue;
+    let verticalGap = Math.abs(current.box.y - previous.box.y);
+    let threshold = avgHeight * 0.5;
+    if (verticalGap <= threshold) {
+      currentLine.push(current);
+      currentLineHeightSum += current.box.height;
+      avgHeight = currentLineHeightSum / currentLine.length;
+    } else {
+      currentLine.sort((a, b) => a.box.x - b.box.x);
+      lines.push(currentLine);
+      currentLine = [current];
+      currentLineHeightSum = current.box.height;
+      avgHeight = current.box.height;
+    }
+  }
+  if (currentLine.length > 0) {
+    currentLine.sort((a, b) => a.box.x - b.box.x);
+    lines.push(currentLine);
+  }
+  return lines;
+}
+function mergeLineCrop(sourceCanvas, lineBoxes, createCanvas, canvasOps) {
+  let minX = Math.min(...lineBoxes.map((b) => b.box.x));
+  let minY = Math.min(...lineBoxes.map((b) => b.box.y));
+  let maxRight = Math.max(...lineBoxes.map((b) => b.box.x + b.box.width));
+  let maxBottom = Math.max(...lineBoxes.map((b) => b.box.y + b.box.height));
+  let mergedBox = { x: minX, y: minY, width: maxRight - minX, height: maxBottom - minY };
+  let commonHeight = maxBottom - minY;
+  let widths = lineBoxes.map(({ box }) => Math.max(1, Math.round(box.width * Math.min(commonHeight / box.height, MAX_BOX_STRETCH))));
+  let totalWidth = widths.reduce((sum, w) => sum + w, 0);
+  if (totalWidth > MAX_MERGED_WIDTH) {
+    let shrink = MAX_MERGED_WIDTH / totalWidth;
+    widths = widths.map((w) => Math.max(1, Math.round(w * shrink)));
+  }
+  let commonWidth = widths.reduce((sum, w) => sum + w, 0);
+  let mergedCanvas = createCanvas(commonWidth, commonHeight);
+  let ctx = mergedCanvas.getContext("2d");
+  let offsetX = 0;
+  for (let i = 0; i < lineBoxes.length; i++) {
+    let entry = lineBoxes[i];
+    let stretchedWidth = widths[i];
+    if (!entry || stretchedWidth === void 0) continue;
+    const { box } = entry;
+    let cropped = canvasOps.getToolkit().crop({ bbox: { x0: box.x, y0: box.y, x1: box.x + box.width, y1: box.y + box.height }, canvas: sourceCanvas });
+    ctx.drawImage(cropped, 0, 0, box.width, box.height, offsetX, 0, stretchedWidth, commonHeight);
+    offsetX += stretchedWidth;
+  }
+  return { mergedCanvas, mergedBox };
+}
+function splitBatchTextByWidths(text, cropWidths) {
+  if (cropWidths.length === 1) {
+    return [text];
+  }
+  let totalWidth = cropWidths.reduce((a, b) => a + b, 0);
+  let chars = [...text];
+  let charWidth = chars.length > 0 ? totalWidth / chars.length : 0;
+  let result = [];
+  let charIdx = 0;
+  for (let i = 0; i < cropWidths.length; i++) {
+    let proportionalChars = i < cropWidths.length - 1 ? Math.round((cropWidths[i] ?? 0) / charWidth) : chars.length - charIdx;
+    let end = Math.min(charIdx + proportionalChars, chars.length);
+    result.push(chars.slice(charIdx, end).join(""));
+    charIdx = end;
+  }
+  return result;
+}
+function packIntoBatches(items, widthOf, targetWidth, separatorGap) {
+  let sorted = [...items].sort((a, b) => widthOf(b) - widthOf(a));
+  let batches = [];
+  let widths = [];
+  for (let item of sorted) {
+    let placed = false;
+    for (let b = 0; b < batches.length; b++) {
+      let batch = batches[b];
+      let width = widths[b];
+      if (batch === void 0 || width === void 0) continue;
+      let gap = separatorGap * batch.length;
+      if (width + gap + widthOf(item) <= targetWidth) {
+        batch.push(item);
+        widths[b] = width + widthOf(item);
+        placed = true;
+        break;
+      }
+    }
+    if (!placed) {
+      batches.push([item]);
+      widths.push(widthOf(item));
+    }
+  }
+  return batches;
+}
+function distributeLineText(boxes, lineText, confidence) {
+  if (boxes.length === 1) {
+    let first = boxes[0];
+    return [{ text: lineText.trim(), box: first?.box ?? { x: 0, y: 0, width: 0, height: 0 }, confidence }];
+  }
+  let words = lineText.trim().split(/\s+/).filter((w) => w.length > 0);
+  let totalBoxWidth = boxes.reduce((sum, b) => sum + b.box.width, 0);
+  let results = [];
+  let wordIdx = 0;
+  for (const { box } of boxes) {
+    if (wordIdx >= words.length) {
+      results.push({ text: "", box, confidence });
+      continue;
+    }
+    let proportion = box.width / totalBoxWidth;
+    let wordsForBox = Math.max(1, Math.round(words.length * proportion));
+    let end = Math.min(wordIdx + wordsForBox, words.length);
+    results.push({ text: words.slice(wordIdx, end).join(" "), box, confidence });
+    wordIdx = end;
+  }
+  return results;
+}
+var MAX_BOX_STRETCH, MAX_MERGED_WIDTH;
+var init_line_grouping = __esm({
+  "node_modules/ppu-paddle-ocr/core/recognition/line-grouping.js"() {
+    MAX_BOX_STRETCH = 4;
+    MAX_MERGED_WIDTH = 16384;
+  }
+});
+
+// node_modules/ppu-paddle-ocr/core/image-cache.js
+var ImageCache, globalImageCache;
+var init_image_cache = __esm({
+  "node_modules/ppu-paddle-ocr/core/image-cache.js"() {
+    ImageCache = class {
+      cache = /* @__PURE__ */ new Map();
+      maxSize;
+      constructor(maxSize = 10) {
+        this.maxSize = maxSize;
+      }
+      get(key) {
+        let value = this.cache.get(key);
+        if (value !== void 0) {
+          this.cache.delete(key);
+          this.cache.set(key, value);
+          return value;
+        }
+        return;
+      }
+      set(key, value) {
+        if (this.cache.has(key)) {
+          this.cache.delete(key);
+        } else if (this.cache.size >= this.maxSize) {
+          let firstKey = this.cache.keys().next().value;
+          if (firstKey !== void 0) {
+            this.cache.delete(firstKey);
+          }
+        }
+        this.cache.set(key, value);
+      }
+      clear() {
+        this.cache.clear();
+      }
+      static generateKey(imageBuffer) {
+        let view = new Uint8Array(imageBuffer);
+        let len = Math.min(view.length, 1024);
+        let hash = 0;
+        for (let i = 0; i < len; i++) {
+          hash = (hash << 5) - hash + view[i];
+          hash = hash & hash;
+        }
+        return `${hash}_${view.length}`;
+      }
+    };
+    globalImageCache = new ImageCache();
+  }
+});
+
+// node_modules/ppu-paddle-ocr/core/base-paddle-ocr.service.js
+var BasePaddleOcrService;
+var init_base_paddle_ocr_service = __esm({
+  "node_modules/ppu-paddle-ocr/core/base-paddle-ocr.service.js"() {
+    init_constants();
+    init_utils();
+    init_base_detection_service();
+    init_batch();
+    init_crop_boxes();
+    init_line_grouping();
+    init_image_cache();
+    BasePaddleOcrService = class {
+      options = DEFAULT_PADDLE_OPTIONS;
+      detectionSession = null;
+      recognitionSession = null;
+      detector = null;
+      recognitor = null;
+      platform;
+      constructor(platform, options) {
+        this.platform = platform;
+        this.options = deepMerge({}, DEFAULT_PADDLE_OPTIONS, options);
+        this.options.session = this.options.session || DEFAULT_PADDLE_OPTIONS.session;
+      }
+      log(message) {
+        if (this.options.debugging?.verbose) {
+          console.log(`[PaddleOcrService:Base] ${message}`);
+        }
+      }
+      async recognize(image, options) {
+        if (!this.detector || !this.recognitor) {
+          await this.initSessions();
+        }
+        try {
+          let imageBuffer;
+          if (typeof image === "string") {
+            if (!image.startsWith("http") && !image.startsWith("/")) {
+              throw new Error("Invalid image string format. Must be an HTTP URL, an absolute path, ArrayBuffer, or Canvas");
+            }
+            imageBuffer = await this.platform.loadResource(image, image);
+          } else if (image instanceof ArrayBuffer) {
+            imageBuffer = image;
+          } else {
+            if (typeof image.toBuffer === "function") {
+              let canvasWithBuffer = image;
+              let buffer = canvasWithBuffer.toBuffer("image/png");
+              imageBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+            } else {
+              let canvasWithCtx = image;
+              let ctx = canvasWithCtx.getContext("2d", { willReadFrequently: true });
+              let imageData = ctx.getImageData(0, 0, canvasWithCtx.width, canvasWithCtx.height);
+              let data = imageData.data;
+              imageBuffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+            }
+          }
+          let cacheKey = ImageCache.generateKey(imageBuffer);
+          if (!options?.noCache && !options?.dictionary) {
+            let cacheResult = globalImageCache.get(cacheKey);
+            if (cacheResult) {
+              this.log("Using cached OCR result");
+              if (options?.flatten) {
+                return { text: cacheResult.text, results: cacheResult.lines ? cacheResult.lines.flat() : cacheResult.results ?? [], confidence: cacheResult.confidence };
+              }
+              return cacheResult;
+            }
+          }
+          let boxes = [];
+          let canvas = typeof image === "string" || image instanceof ArrayBuffer ? await this.platform.canvas.prepareCanvas(imageBuffer) : image;
+          boxes = await this.detector.run(canvas);
+          if (boxes.length === 0) {
+            return options?.flatten ? { text: "", results: [], confidence: 0 } : { text: "", lines: [], confidence: 0 };
+          }
+          let dict = this.options.recognition?.charactersDictionary;
+          if (options?.dictionary) {
+            let dictionaryContent = "";
+            if (typeof options.dictionary === "string") {
+              let dictBuffer = await this.platform.loadResource(options.dictionary, options.dictionary);
+              dictionaryContent = new TextDecoder("utf-8").decode(dictBuffer);
+            } else {
+              dictionaryContent = new TextDecoder("utf-8").decode(options.dictionary);
+            }
+            dict = parseDictionary(dictionaryContent);
+          }
+          let strategy = options?.strategy ?? this.options.recognition?.strategy ?? "per-line";
+          let results = await this.recognitor.run(canvas, boxes, dict, strategy);
+          let groupedResult = groupResultsByLine(results);
+          let finalResult = options?.flatten ? flattenResults(results) : groupedResult;
+          if (!options?.noCache && !options?.dictionary) {
+            globalImageCache.set(cacheKey, finalResult);
+          }
+          return finalResult;
+        } catch (e) {
+          let err = e instanceof Error ? e : new Error(String(e));
+          console.error("recognize: error", err.message, err.stack);
+          throw e;
+        }
+      }
+      async detect(image, options) {
+        if (!this.detector) {
+          await this.initSessions();
+        }
+        const { crop, saveCropsTo, ...tuning } = options ?? {};
+        let detector = Object.keys(tuning).length > 0 ? new BaseDetectionService(this.platform, this.detectionSession, { ...this.options.detection, ...tuning }, this.options.debugging, this.options.processing?.engine ?? DEFAULT_PROCESSING_ENGINE) : this.detector;
+        let canvas;
+        if (typeof image === "string") {
+          if (!image.startsWith("http") && !image.startsWith("/")) {
+            throw new Error("Invalid image string format. Must be an HTTP URL, an absolute path, ArrayBuffer, or Canvas");
+          }
+          canvas = await this.platform.canvas.prepareCanvas(await this.platform.loadResource(image, image));
+        } else if (image instanceof ArrayBuffer) {
+          canvas = await this.platform.canvas.prepareCanvas(image);
+        } else {
+          canvas = image;
+        }
+        let boxes = (await detector.run(canvas)).filter((box) => box.width > 0 && box.height > 0);
+        if (!crop && !saveCropsTo) {
+          return { boxes };
+        }
+        let crops = await cropDetectedBoxes(this.platform, canvas, boxes, { crop, saveCropsTo });
+        return crop ? { boxes, crops } : { boxes };
+      }
+      async batchRecognize(images, options) {
+        let settle = options?.settle ?? false;
+        let collected = [];
+        await runPool(images, { concurrency: this.resolveConcurrency(options?.concurrency), settle, signal: options?.signal, onProgress: options?.onProgress, total: Array.isArray(images) ? images.length : void 0 }, (image) => this.recognize(image, options), (result) => {
+          collected[result.index] = result;
+        });
+        if (settle) return collected;
+        return collected.map((item) => item.status === "fulfilled" ? item.value : void 0);
+      }
+      async *batchRecognizeStream(images, options) {
+        let queue = createAsyncQueue();
+        let pump = (async () => {
+          try {
+            await runPool(images, { concurrency: this.resolveConcurrency(options?.concurrency), settle: options?.settle ?? false, signal: options?.signal, onProgress: options?.onProgress, total: Array.isArray(images) ? images.length : void 0 }, (image) => this.recognize(image, options), (result) => queue.push(result));
+            queue.close();
+          } catch (error) {
+            queue.fail(error);
+          }
+        })();
+        yield* queue.drain();
+        await pump;
+      }
+      resolveConcurrency(value) {
+        if (typeof value === "number" && value > 0) return Math.floor(value);
+        let providers = this.options.session?.executionProviders ?? [];
+        let usesAccelerator = providers.some((provider) => {
+          let name = (typeof provider === "string" ? provider : provider.name).toLowerCase();
+          return name !== "cpu" && name !== "wasm";
+        });
+        return usesAccelerator ? 1 : 4;
+      }
+    };
   }
 });
 
@@ -2183,266 +2508,396 @@ var init_session_factory = __esm({
   }
 });
 
-// node_modules/ppu-paddle-ocr/core/base-detection.service.js
-var BaseDetectionService;
-var init_base_detection_service = __esm({
-  "node_modules/ppu-paddle-ocr/core/base-detection.service.js"() {
-    init_index_canvas_web();
-    init_constants();
-    BaseDetectionService = class _BaseDetectionService {
-      options;
-      debugging;
-      session;
-      platform;
-      engine;
-      static NUM_CHANNELS = 3;
-      lastDetectionCanvas = null;
-      constructor(platform, session, options = {}, debugging = {}, engine = "opencv") {
-        this.platform = platform;
-        this.session = session;
-        this.options = { ...DEFAULT_DETECTION_OPTIONS, ...options };
-        this.debugging = { ...DEFAULT_DEBUGGING_OPTIONS, ...debugging };
-        if (engine === "opencv" && !this.platform.imageProcessor) {
-          this.engine = "canvas-native";
-        } else {
-          this.engine = engine;
-        }
+// node_modules/ppu-ocv/canvas-factory.js
+function setPlatform(platform) {
+  _platform = platform;
+}
+function getPlatform() {
+  if (!_platform) {
+    throw new Error('No canvas platform registered. Import "ppu-ocv" (Node), "ppu-ocv/web" (browser), "ppu-ocv/canvas" (Node canvas-only), "ppu-ocv/canvas-web" (browser canvas-only), or "ppu-ocv/canvas-mobile" (React Native / Skia) to auto-register.');
+  }
+  return _platform;
+}
+function isCanvasLike(value) {
+  return typeof value === "object" && value !== null && typeof value.getContext === "function" && typeof value.width === "number" && typeof value.height === "number";
+}
+var _platform;
+var init_canvas_factory = __esm({
+  "node_modules/ppu-ocv/canvas-factory.js"() {
+    _platform = null;
+  }
+});
+
+// node_modules/ppu-ocv/platform/web.js
+var webPlatform;
+var init_web = __esm({
+  "node_modules/ppu-ocv/platform/web.js"() {
+    webPlatform = { createCanvas(width, height) {
+      if (typeof OffscreenCanvas !== "undefined") {
+        return new OffscreenCanvas(width, height);
       }
-      log(message) {
-        if (this.debugging.verbose) {
-          console.log(`[DetectionService] ${message}`);
-        }
+      if (typeof document !== "undefined") {
+        let c = document.createElement("canvas");
+        c.width = width;
+        c.height = height;
+        return c;
       }
-      async run(image) {
-        this.log("Starting text detection process");
-        try {
-          let canvasToProcess;
-          if (this.platform.isCanvas(image)) {
-            canvasToProcess = image;
-          } else if (this.engine === "opencv" && this.platform.imageProcessor) {
-            canvasToProcess = await this.platform.imageProcessor.prepareCanvas(image);
+      throw new Error("No canvas implementation available in this environment.");
+    }, async loadImage(source) {
+      let blob;
+      if (source instanceof ArrayBuffer) {
+        blob = new Blob([source]);
+      } else if (typeof source === "string") {
+        let res = await fetch(source);
+        blob = await res.blob();
+      } else {
+        throw new Error("loadImage: unsupported source type");
+      }
+      let bitmap = await createImageBitmap(blob);
+      let canvas = webPlatform.createCanvas(bitmap.width, bitmap.height);
+      let ctx = canvas.getContext("2d");
+      ctx.drawImage(bitmap, 0, 0);
+      bitmap.close();
+      return canvas;
+    }, isCanvas(value) {
+      if (typeof HTMLCanvasElement !== "undefined" && value instanceof HTMLCanvasElement) {
+        return true;
+      }
+      if (typeof OffscreenCanvas !== "undefined" && value instanceof OffscreenCanvas) {
+        return true;
+      }
+      return false;
+    } };
+  }
+});
+
+// node_modules/ppu-ocv/canvas-toolkit.base.js
+var CanvasToolkitBase;
+var init_canvas_toolkit_base = __esm({
+  "node_modules/ppu-ocv/canvas-toolkit.base.js"() {
+    init_canvas_factory();
+    CanvasToolkitBase = class _CanvasToolkitBase {
+      static _baseInstance = null;
+      step = 0;
+      constructor() {
+      }
+      static getInstance() {
+        if (!_CanvasToolkitBase._baseInstance) {
+          _CanvasToolkitBase._baseInstance = new _CanvasToolkitBase();
+        }
+        return _CanvasToolkitBase._baseInstance;
+      }
+      crop(options) {
+        const { bbox, canvas } = options;
+        let croppedCanvas = getPlatform().createCanvas(bbox.x1 - bbox.x0, bbox.y1 - bbox.y0);
+        let croppedCtx = croppedCanvas.getContext("2d");
+        croppedCtx.drawImage(canvas, bbox.x0, bbox.y0, bbox.x1 - bbox.x0, bbox.y1 - bbox.y0, 0, 0, croppedCanvas.width, croppedCanvas.height);
+        return croppedCanvas;
+      }
+      isDirty(options) {
+        const { canvas, threshold = 127.5, majorColorThreshold = 0.97 } = options;
+        let whiteCount = 0;
+        let blackCount = 0;
+        let borderlessCanvas = this.crop({ bbox: { x0: canvas.width * 0.1, y0: canvas.height * 0.1, x1: canvas.width * 0.9, y1: canvas.height * 0.9 }, canvas });
+        let ctx = borderlessCanvas.getContext("2d");
+        let colorData = ctx.getImageData(0, 0, borderlessCanvas.width, borderlessCanvas.height).data;
+        for (let i = 0; i < colorData.length; i += 4) {
+          let red = colorData[i];
+          let green = colorData[i + 1];
+          let blue = colorData[i + 2];
+          if (red >= threshold && green >= threshold && blue >= threshold) {
+            whiteCount++;
           } else {
-            canvasToProcess = await CanvasProcessor.prepareCanvas(image);
-          }
-          let input = await this.preprocessDetection(canvasToProcess);
-          let detection = await this.runInference(input.tensor, input.width, input.height);
-          if (!detection) {
-            console.error("Text detection failed (output tensor is null)");
-            return [];
-          }
-          let detectedBoxes = this.postprocessDetection(detection, input);
-          if (this.debugging.debug && this.debugging.debugFolder && this.lastDetectionCanvas) {
-            await this.debugDetectionCanvas(this.lastDetectionCanvas, input.width, input.height);
-            await this.debugDetectedBoxes(canvasToProcess, detectedBoxes);
-          }
-          this.log(`Detected ${detectedBoxes.length} text boxes in image`);
-          return detectedBoxes;
-        } catch (error) {
-          console.error("Error during text detection:", error instanceof Error ? error.message : String(error));
-          return [];
-        }
-      }
-      async preprocessDetection(canvas) {
-        const { width: originalWidth, height: originalHeight } = canvas;
-        const { width: resizeW, height: resizeH, ratio: resizeRatio } = this.calculateResizeDimensions(originalWidth, originalHeight);
-        let width = Math.ceil(resizeW / 32) * 32;
-        let height = Math.ceil(resizeH / 32) * 32;
-        let paddedCanvas = this.platform.createCanvas(width, height);
-        let paddedCtx = paddedCanvas.getContext("2d");
-        paddedCtx.drawImage(canvas, 0, 0, originalWidth, originalHeight, 0, 0, resizeW, resizeH);
-        let tensor = this.imageToTensor(paddedCanvas, width, height);
-        this.log(`Detection preprocessed: original(${originalWidth}x${originalHeight}), model_input(${width}x${height}), resize_ratio: ${resizeRatio.toFixed(4)}, engine: ${this.engine}`);
-        return { tensor, width, height, resizeRatio, originalWidth, originalHeight };
-      }
-      calculateResizeDimensions(originalWidth, originalHeight) {
-        let MAX_SIDE_LEN = this.options.maxSideLength ?? 640;
-        let resizeW = originalWidth;
-        let resizeH = originalHeight;
-        let ratio = 1;
-        if (Math.max(resizeH, resizeW) > MAX_SIDE_LEN) {
-          ratio = MAX_SIDE_LEN / (resizeH > resizeW ? resizeH : resizeW);
-          resizeW = Math.round(resizeW * ratio);
-          resizeH = Math.round(resizeH * ratio);
-        }
-        return { width: resizeW, height: resizeH, ratio };
-      }
-      imageToTensor(canvas, width, height) {
-        let ctx = canvas.getContext("2d");
-        let imageData = ctx.getImageData(0, 0, width, height);
-        let rgbaData = imageData.data;
-        let channelSize = height * width;
-        let tensor = new Float32Array(_BaseDetectionService.NUM_CHANNELS * channelSize);
-        let mean = this.options.mean ?? [0.485, 0.456, 0.406];
-        let stdDeviation = this.options.stdDeviation ?? [0.229, 0.224, 0.225];
-        let meanR = mean[0] ?? 0.485;
-        let meanG = mean[1] ?? 0.456;
-        let meanB = mean[2] ?? 0.406;
-        let stdR = stdDeviation[0] ?? 0.229;
-        let stdG = stdDeviation[1] ?? 0.224;
-        let stdB = stdDeviation[2] ?? 0.225;
-        let scaleR = 1 / (255 * stdR);
-        let scaleG = 1 / (255 * stdG);
-        let scaleB = 1 / (255 * stdB);
-        let shiftR = meanR / stdR;
-        let shiftG = meanG / stdG;
-        let shiftB = meanB / stdB;
-        let gOffset = channelSize;
-        let bOffset = channelSize * 2;
-        for (let i = 0, rgbaIdx = 0; i < channelSize; i++, rgbaIdx += 4) {
-          let r = rgbaData[rgbaIdx];
-          let g = rgbaData[rgbaIdx + 1];
-          let b = rgbaData[rgbaIdx + 2];
-          tensor[i] = r * scaleR - shiftR;
-          tensor[gOffset + i] = g * scaleG - shiftG;
-          tensor[bOffset + i] = b * scaleB - shiftB;
-        }
-        return tensor;
-      }
-      async runInference(tensor, width, height) {
-        let inputTensor;
-        try {
-          this.log("Running detection inference...");
-          inputTensor = new this.platform.ort.Tensor("float32", tensor, [1, 3, height, width]);
-          let feeds = { x: inputTensor };
-          let results = await this.session.run(feeds);
-          let outputTensor = results[this.session.outputNames[0] || "sigmoid_0.tmp_0"];
-          this.log("Detection inference complete!");
-          if (!outputTensor) {
-            console.error(`Output tensor ${this.session.outputNames[0]} not found in detection results`);
-            return null;
-          }
-          return outputTensor.data;
-        } catch (error) {
-          console.error("Error during model inference:", error instanceof Error ? error.message : String(error));
-          throw error;
-        } finally {
-          inputTensor?.dispose();
-        }
-      }
-      tensorToCanvas(tensor, width, height) {
-        let canvas = this.platform.createCanvas(width, height);
-        let ctx = canvas.getContext("2d");
-        let imageData = ctx.createImageData(width, height);
-        let data = imageData.data;
-        let totalPixels = width * height;
-        for (let i = 0; i < totalPixels; i++) {
-          let probability = tensor[i] || 0;
-          let grayValue = Math.round(probability * 255);
-          let pixelIdx = i * 4;
-          data[pixelIdx] = grayValue;
-          data[pixelIdx + 1] = grayValue;
-          data[pixelIdx + 2] = grayValue;
-          data[pixelIdx + 3] = 255;
-        }
-        ctx.putImageData(imageData, 0, 0);
-        return canvas;
-      }
-      postprocessDetection(detection, input, minBoxAreaOnPadded = this.options.minimumAreaThreshold ?? 50, paddingVertical = this.options.paddingVertical || 0.4, paddingHorizontal = this.options.paddingHorizontal || 0.6) {
-        this.log("Post-processing detection results...");
-        const { width, height, resizeRatio, originalWidth, originalHeight } = input;
-        let canvas = this.tensorToCanvas(detection, width, height);
-        this.lastDetectionCanvas = canvas;
-        if (this.engine === "opencv" && this.platform.imageProcessor) {
-          return this.postprocessWithOpenCV(canvas, width, height, resizeRatio, originalWidth, originalHeight, minBoxAreaOnPadded, paddingVertical, paddingHorizontal);
-        }
-        return this.postprocessWithCanvasNative(canvas, resizeRatio, originalWidth, originalHeight, minBoxAreaOnPadded, paddingVertical, paddingHorizontal);
-      }
-      postprocessWithOpenCV(canvas, width, height, resizeRatio, originalWidth, originalHeight, minBoxAreaOnPadded, paddingVertical, paddingHorizontal) {
-        let ip = this.platform.imageProcessor;
-        let processor = new ip.ImageProcessor(canvas);
-        try {
-          processor.grayscale().convert({ rtype: ip.cv.CV_8UC1 });
-          let contours = new ip.Contours(processor.toMat(), { mode: ip.cv.RETR_LIST, method: ip.cv.CHAIN_APPROX_SIMPLE });
-          let boxes = this.extractBoxesFromContours(contours, width, height, resizeRatio, originalWidth, originalHeight, minBoxAreaOnPadded, paddingVertical, paddingHorizontal);
-          contours.destroy();
-          this.log(`Found ${boxes.length} potential text boxes (opencv)`);
-          return boxes;
-        } finally {
-          processor.destroy();
-        }
-      }
-      extractBoxesFromContours(contours, width, height, resizeRatio, originalWidth, originalHeight, minBoxArea, paddingVertical, paddingHorizontal) {
-        let boxes = [];
-        contours.iterate((contour) => {
-          let rect = contours.getRect(contour);
-          if (rect.width * rect.height <= minBoxArea) {
-            return;
-          }
-          let paddedRect = this.applyPaddingToRect(rect, width, height, paddingVertical, paddingHorizontal);
-          let finalBox = this.convertToOriginalCoordinates(paddedRect, resizeRatio, originalWidth, originalHeight);
-          if (finalBox.width > 5 && finalBox.height > 5) {
-            boxes.push(finalBox);
-          }
-        });
-        return boxes;
-      }
-      postprocessWithCanvasNative(canvas, resizeRatio, originalWidth, originalHeight, minBoxAreaOnPadded, paddingVertical, paddingHorizontal) {
-        let processor = new CanvasProcessor(canvas).grayscale().threshold({ thresh: 127 });
-        let regions = processor.findRegions({ foreground: "light", minArea: minBoxAreaOnPadded, thresh: 0, padding: { vertical: paddingVertical, horizontal: paddingHorizontal }, scale: 1 / resizeRatio });
-        let boxes = this.extractBoxesFromRegions(regions, originalWidth, originalHeight);
-        this.log(`Found ${boxes.length} potential text boxes (canvas-native)`);
-        return boxes;
-      }
-      extractBoxesFromRegions(regions, originalWidth, originalHeight) {
-        let boxes = [];
-        for (let region of regions) {
-          const { bbox } = region;
-          let box = { x: Math.max(0, bbox.x0), y: Math.max(0, bbox.y0), width: bbox.x1 - bbox.x0, height: bbox.y1 - bbox.y0 };
-          if (box.x + box.width > originalWidth) {
-            box.width = originalWidth - box.x;
-          }
-          if (box.y + box.height > originalHeight) {
-            box.height = originalHeight - box.y;
-          }
-          if (box.width > 5 && box.height > 5) {
-            boxes.push(box);
+            blackCount++;
           }
         }
-        return boxes;
+        let majorColorRatio = Math.max(whiteCount, blackCount) / (blackCount + whiteCount);
+        return majorColorRatio < majorColorThreshold;
       }
-      applyPaddingToRect(rect, maxWidth, maxHeight, paddingVertical, paddingHorizontal) {
-        let verticalPadding = Math.round(rect.height * paddingVertical);
-        let horizontalPadding = Math.round(rect.height * paddingHorizontal);
-        let x2 = rect.x - horizontalPadding;
-        let y = rect.y - verticalPadding;
-        let width = rect.width + 2 * horizontalPadding;
-        let height = rect.height + 2 * verticalPadding;
-        x2 = Math.max(0, x2);
-        y = Math.max(0, y);
-        let rightEdge = Math.min(maxWidth, rect.x + rect.width + horizontalPadding);
-        let bottomEdge = Math.min(maxHeight, rect.y + rect.height + verticalPadding);
-        width = rightEdge - x2;
-        height = bottomEdge - y;
-        return { x: x2, y, width, height };
+      drawLine(options) {
+        const { ctx, x: x2, y, width, height, lineWidth = 2, color = "blue" } = options;
+        ctx.beginPath();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = lineWidth;
+        ctx.strokeRect(x2, y, width, height);
+        ctx.closePath();
       }
-      convertToOriginalCoordinates(rect, resizeRatio, originalWidth, originalHeight) {
-        let scaledX = rect.x / resizeRatio;
-        let scaledY = rect.y / resizeRatio;
-        let scaledWidth = rect.width / resizeRatio;
-        let scaledHeight = rect.height / resizeRatio;
-        let x2 = Math.max(0, Math.round(scaledX));
-        let y = Math.max(0, Math.round(scaledY));
-        let width = Math.min(originalWidth - x2, Math.round(scaledWidth));
-        let height = Math.min(originalHeight - y, Math.round(scaledHeight));
-        return { x: x2, y, width, height };
-      }
-      async debugDetectionCanvas(canvas, _width, _height) {
-        let dir = this.debugging.debugFolder ?? "";
-        await this.platform.saveDebugImage(canvas, "detection-debug", dir);
-        this.log(`Probability map visualized and saved to: ${dir}`);
-      }
-      async debugDetectedBoxes(image, boxes) {
-        let canvas = this.platform.isCanvas(image) ? image : await CanvasProcessor.prepareCanvas(image);
-        let ctx = canvas.getContext("2d");
-        for (let box of boxes) {
-          const { x: x2, y, width, height } = box;
-          CanvasToolkitBase.getInstance().drawLine({ ctx, x: x2, y, width, height });
+      drawContour(options) {
+        const { ctx, contour, strokeStyle = "red", lineWidth = 2 } = options;
+        let pts = contour.data32S;
+        if (pts.length < 4) return;
+        ctx.strokeStyle = strokeStyle;
+        ctx.lineWidth = lineWidth;
+        ctx.beginPath();
+        ctx.moveTo(pts[0] ?? 0, pts[1] ?? 0);
+        for (let i = 2; i < pts.length; i += 2) {
+          ctx.lineTo(pts[i] ?? 0, pts[i + 1] ?? 0);
         }
-        let dir = this.debugging.debugFolder ?? "";
-        await this.platform.saveDebugImage(canvas, "boxes-debug", dir);
-        this.log(`Boxes visualized and saved to: ${dir}`);
+        ctx.closePath();
+        ctx.stroke();
       }
     };
+  }
+});
+
+// node_modules/ppu-ocv/canvas-io.js
+async function bufferToCanvas(file) {
+  if (isCanvasLike(file)) return file;
+  return getPlatform().loadImage(file);
+}
+async function canvasToBuffer(canvas) {
+  if (canvas instanceof ArrayBuffer) return canvas;
+  if (typeof canvas.toBuffer === "function") {
+    let buffer = canvas.toBuffer("image/png");
+    let arrayBuffer = new ArrayBuffer(buffer.byteLength);
+    new Uint8Array(arrayBuffer).set(new Uint8Array(buffer));
+    return arrayBuffer;
+  }
+  let toBlob = canvas.toBlob;
+  if (typeof toBlob === "function") {
+    let blob = await new Promise((resolve, reject) => {
+      toBlob.call(canvas, (b) => b ? resolve(b) : reject(new Error("toBlob returned null")), "image/png");
+    });
+    return blob.arrayBuffer();
+  }
+  if (typeof canvas.convertToBlob === "function") {
+    let blob = await canvas.convertToBlob({ type: "image/png" });
+    return blob.arrayBuffer();
+  }
+  if (typeof canvas.toDataURL === "function") {
+    let dataURL = canvas.toDataURL("image/png");
+    let base64Data = dataURL.replace(/^data:image\/png;base64,/, "");
+    let binaryString = atob(base64Data);
+    let arrayBuffer = new ArrayBuffer(binaryString.length);
+    let bytes = new Uint8Array(arrayBuffer);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    return arrayBuffer;
+  }
+  let ctx = canvas.getContext("2d");
+  let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  let canvasBuffer = new ArrayBuffer(imageData.data.byteLength);
+  new Uint8Array(canvasBuffer).set(new Uint8Array(imageData.data.buffer, imageData.data.byteOffset, imageData.data.byteLength));
+  return canvasBuffer;
+}
+var init_canvas_io = __esm({
+  "node_modules/ppu-ocv/canvas-io.js"() {
+    init_canvas_factory();
+  }
+});
+
+// node_modules/ppu-ocv/canvas-regions.js
+function detectRegions(data, width, height, options = {}) {
+  const { foreground = "light", thresh = 127, minArea = 1, maxArea = 1 / 0, padding, scale = 1 } = options;
+  let visited = new Uint8Array(width * height);
+  let regions = [];
+  let neighbours = [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]];
+  let isForeground = (pixelIdx) => {
+    let r = data[pixelIdx] ?? 0;
+    return foreground === "light" ? r > thresh : r <= thresh;
+  };
+  for (let startY = 0; startY < height; startY++) {
+    for (let startX = 0; startX < width; startX++) {
+      let startFlat = startY * width + startX;
+      if (visited[startFlat]) continue;
+      visited[startFlat] = 1;
+      if (!isForeground(startFlat * 4)) continue;
+      let stack = [startFlat];
+      let minX = startX, maxX = startX;
+      let minY = startY, maxY = startY;
+      let area = 0;
+      while (stack.length > 0) {
+        let flat = stack.pop();
+        if (flat === void 0) break;
+        area++;
+        let x2 = flat % width;
+        let y = (flat - x2) / width;
+        if (x2 < minX) minX = x2;
+        else if (x2 > maxX) maxX = x2;
+        if (y < minY) minY = y;
+        else if (y > maxY) maxY = y;
+        for (const [dx, dy] of neighbours) {
+          let nx = x2 + dx;
+          let ny = y + dy;
+          if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+          let nFlat = ny * width + nx;
+          if (visited[nFlat]) continue;
+          visited[nFlat] = 1;
+          if (isForeground(nFlat * 4)) stack.push(nFlat);
+        }
+      }
+      if (area >= minArea && area <= maxArea) {
+        let x0 = minX;
+        let y0 = minY;
+        let x1 = maxX + 1;
+        let y1 = maxY + 1;
+        if (padding) {
+          let bboxH = y1 - y0;
+          let vPad = Math.round(bboxH * (padding.vertical ?? 0));
+          let hPad = Math.round(bboxH * (padding.horizontal ?? 0));
+          x0 = Math.max(0, x0 - hPad);
+          y0 = Math.max(0, y0 - vPad);
+          x1 = Math.min(width, x1 + hPad);
+          y1 = Math.min(height, y1 + vPad);
+        }
+        if (scale !== 1) {
+          x0 = Math.max(0, Math.round(x0 * scale));
+          y0 = Math.max(0, Math.round(y0 * scale));
+          x1 = Math.round(x1 * scale);
+          y1 = Math.round(y1 * scale);
+        }
+        regions.push({ bbox: { x0, y0, x1, y1 }, area });
+      }
+    }
+  }
+  return regions;
+}
+var init_canvas_regions = __esm({
+  "node_modules/ppu-ocv/canvas-regions.js"() {
+  }
+});
+
+// node_modules/ppu-ocv/canvas-processor.js
+var CanvasProcessor;
+var init_canvas_processor = __esm({
+  "node_modules/ppu-ocv/canvas-processor.js"() {
+    init_canvas_factory();
+    init_canvas_io();
+    init_canvas_regions();
+    CanvasProcessor = class {
+      _canvas;
+      constructor(source) {
+        this._canvas = source;
+      }
+      get width() {
+        return this._canvas.width;
+      }
+      get height() {
+        return this._canvas.height;
+      }
+      resize(options) {
+        const { width, height } = options;
+        let dst = getPlatform().createCanvas(width, height);
+        dst.getContext("2d").drawImage(this._canvas, 0, 0, width, height);
+        this._canvas = dst;
+        return this;
+      }
+      grayscale() {
+        const { width, height } = this._canvas;
+        let imageData = this._canvas.getContext("2d").getImageData(0, 0, width, height);
+        let d = imageData.data;
+        for (let i = 0; i < d.length; i += 4) {
+          let luma = Math.round(0.299 * (d[i] ?? 0) + 0.587 * (d[i + 1] ?? 0) + 0.114 * (d[i + 2] ?? 0));
+          d[i] = luma;
+          d[i + 1] = luma;
+          d[i + 2] = luma;
+        }
+        let dst = getPlatform().createCanvas(width, height);
+        dst.getContext("2d").putImageData(imageData, 0, 0);
+        this._canvas = dst;
+        return this;
+      }
+      convert(options = {}) {
+        const { alpha = 1, beta = 0 } = options;
+        if (alpha === 1 && beta === 0) return this;
+        const { width, height } = this._canvas;
+        let imageData = this._canvas.getContext("2d").getImageData(0, 0, width, height);
+        let d = imageData.data;
+        for (let i = 0; i < d.length; i += 4) {
+          d[i] = Math.round((d[i] ?? 0) * alpha + beta);
+          d[i + 1] = Math.round((d[i + 1] ?? 0) * alpha + beta);
+          d[i + 2] = Math.round((d[i + 2] ?? 0) * alpha + beta);
+        }
+        let dst = getPlatform().createCanvas(width, height);
+        dst.getContext("2d").putImageData(imageData, 0, 0);
+        this._canvas = dst;
+        return this;
+      }
+      invert() {
+        const { width, height } = this._canvas;
+        let imageData = this._canvas.getContext("2d").getImageData(0, 0, width, height);
+        let d = imageData.data;
+        for (let i = 0; i < d.length; i += 4) {
+          d[i] = 255 - (d[i] ?? 0);
+          d[i + 1] = 255 - (d[i + 1] ?? 0);
+          d[i + 2] = 255 - (d[i + 2] ?? 0);
+        }
+        let dst = getPlatform().createCanvas(width, height);
+        dst.getContext("2d").putImageData(imageData, 0, 0);
+        this._canvas = dst;
+        return this;
+      }
+      threshold(options = {}) {
+        const { thresh = 127, maxValue = 255 } = options;
+        const { width, height } = this._canvas;
+        let imageData = this._canvas.getContext("2d").getImageData(0, 0, width, height);
+        let d = imageData.data;
+        for (let i = 0; i < d.length; i += 4) {
+          let luma = d[i] === d[i + 1] && d[i + 1] === d[i + 2] ? d[i] ?? 0 : Math.round(0.299 * (d[i] ?? 0) + 0.587 * (d[i + 1] ?? 0) + 0.114 * (d[i + 2] ?? 0));
+          let val = luma > thresh ? maxValue : 0;
+          d[i] = val;
+          d[i + 1] = val;
+          d[i + 2] = val;
+        }
+        let dst = getPlatform().createCanvas(width, height);
+        dst.getContext("2d").putImageData(imageData, 0, 0);
+        this._canvas = dst;
+        return this;
+      }
+      border(options = {}) {
+        const { size = 10, color = "white" } = options;
+        const { width, height } = this._canvas;
+        let dst = getPlatform().createCanvas(width + size * 2, height + size * 2);
+        let ctx = dst.getContext("2d");
+        ctx.fillStyle = color;
+        ctx.fillRect(0, 0, dst.width, dst.height);
+        ctx.drawImage(this._canvas, size, size);
+        this._canvas = dst;
+        return this;
+      }
+      rotate(options) {
+        const { angle, cx = this._canvas.width / 2, cy = this._canvas.height / 2 } = options;
+        if (angle === 0) return this;
+        const { width, height } = this._canvas;
+        let dst = getPlatform().createCanvas(width, height);
+        let ctx = dst.getContext("2d");
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(-angle * Math.PI / 180);
+        ctx.drawImage(this._canvas, -cx, -cy);
+        ctx.restore();
+        this._canvas = dst;
+        return this;
+      }
+      findRegions(options = {}) {
+        const { width, height } = this._canvas;
+        let data = this._canvas.getContext("2d").getImageData(0, 0, width, height).data;
+        return detectRegions(data, width, height, options);
+      }
+      toCanvas() {
+        return this._canvas;
+      }
+      static async prepareCanvas(file) {
+        return bufferToCanvas(file);
+      }
+      static async prepareBuffer(canvas) {
+        return canvasToBuffer(canvas);
+      }
+    };
+  }
+});
+
+// node_modules/ppu-ocv/index.canvas-web.js
+var init_index_canvas_web = __esm({
+  "node_modules/ppu-ocv/index.canvas-web.js"() {
+    init_canvas_factory();
+    init_web();
+    init_canvas_factory();
+    init_web();
+    init_canvas_toolkit_base();
+    init_canvas_processor();
+    setPlatform(webPlatform);
   }
 });
 
@@ -2468,6 +2923,7 @@ var WebPlatformProvider;
 var init_platform_web = __esm({
   "node_modules/ppu-paddle-ocr/web/platform.web.js"() {
     init_ort_wasm_min();
+    init_index_canvas_web();
     WebPlatformProvider = class {
       pathSeparator = "/";
       ort = ort_wasm_min_exports;
@@ -2495,9 +2951,10 @@ var init_platform_web = __esm({
       async saveDebugImage(_canvas, _filename, _outputDir) {
         return Promise.resolve();
       }
+      canvas = { prepareCanvas: (image) => CanvasProcessor.prepareCanvas(image), createProcessor: (canvas) => new CanvasProcessor(canvas), getToolkit: () => CanvasToolkitBase.getInstance() };
     };
-    if (typeof window !== "undefined" && !O.wasm.wasmPaths) {
-      O.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0/dist/";
+    if (typeof window !== "undefined" && !B.wasm.wasmPaths) {
+      B.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0/dist/";
     }
   }
 });
@@ -2516,21 +2973,304 @@ var init_detection_service_web = __esm({
   }
 });
 
+// node_modules/ppu-paddle-ocr/core/recognition/ctc.js
+var ctc_exports = {};
+__export(ctc_exports, {
+  BLANK_INDEX: () => BLANK_INDEX,
+  MIN_CROP_WIDTH: () => MIN_CROP_WIDTH,
+  UNK_TOKEN: () => UNK_TOKEN,
+  ctcGreedyDecode: () => ctcGreedyDecode,
+  decodeResults: () => decodeResults
+});
+function ctcGreedyDecode(logits, sequenceLength, numClasses, charDict) {
+  let dictLen = charDict.length;
+  let lastDictIndex = dictLen - 1;
+  let decodedText = "";
+  let lastCharIndex = -1;
+  let confidenceSum = 0;
+  let confidenceCount = 0;
+  for (let t = 0; t < sequenceLength; t++) {
+    let base = t * numClasses;
+    let maxProb = logits[base] ?? -1 / 0;
+    let maxIndex = 0;
+    for (let c = 1; c < numClasses; c++) {
+      let prob = logits[base + c] ?? -1 / 0;
+      if (prob > maxProb) {
+        maxProb = prob;
+        maxIndex = c;
+      }
+    }
+    if (maxIndex === BLANK_INDEX || maxIndex === lastCharIndex) {
+      lastCharIndex = maxIndex;
+      continue;
+    }
+    if (maxIndex >= 0 && maxIndex < dictLen) {
+      let char = charDict[maxIndex] ?? "";
+      if (maxIndex === lastDictIndex) {
+        if (char !== UNK_TOKEN) {
+          decodedText += " ";
+          confidenceSum += maxProb;
+          confidenceCount++;
+        }
+      } else {
+        decodedText += char;
+        confidenceSum += maxProb;
+        confidenceCount++;
+      }
+    }
+    lastCharIndex = maxIndex;
+  }
+  let confidence = confidenceCount > 0 ? confidenceSum / confidenceCount : 0;
+  return { text: decodedText, confidence };
+}
+function decodeResults(outputTensor, charactersDictionary, numClassesFromShape, verbose = false) {
+  let outputData = outputTensor.data;
+  let outputShape = outputTensor.dims;
+  let sequenceLength = outputShape[1];
+  let numClasses = outputShape[2] ?? numClassesFromShape;
+  if (!charactersDictionary) {
+    return { text: "", confidence: 0 };
+  }
+  let dict = charactersDictionary;
+  if (charactersDictionary.length === numClasses - 1) {
+    dict = ["", ...charactersDictionary];
+  } else if (numClasses !== charactersDictionary.length && verbose) {
+    console.warn(`Warning: Model output classes (${numClasses}) does not match dictionary length (${charactersDictionary.length}).
+ Consider using our model & dictionary catalogue at https://github.com/PT-Perkasa-Pilar-Utama/ppu-paddle-ocr-models.`);
+  }
+  return ctcGreedyDecode(outputData, sequenceLength, numClasses, dict);
+}
+var BLANK_INDEX, UNK_TOKEN, MIN_CROP_WIDTH;
+var init_ctc = __esm({
+  "node_modules/ppu-paddle-ocr/core/recognition/ctc.js"() {
+    BLANK_INDEX = 0;
+    UNK_TOKEN = "<unk>";
+    MIN_CROP_WIDTH = 8;
+  }
+});
+
+// node_modules/ppu-paddle-ocr/core/recognition/image-tensor.js
+var image_tensor_exports = {};
+__export(image_tensor_exports, {
+  createImageTensor: () => createImageTensor,
+  createImageTensorFromCanvas: () => createImageTensorFromCanvas,
+  preprocessImage: () => preprocessImage
+});
+async function preprocessImage(cropCanvas, targetHeight, imageProcessor, createCanvasProcessor) {
+  let originalWidth = cropCanvas.width;
+  let originalHeight = cropCanvas.height;
+  if (originalHeight === 0 || originalWidth === 0) {
+    throw new Error(`Crop dimensions are zero: ${originalWidth}x${originalHeight}`);
+  }
+  let aspectRatio = originalWidth / originalHeight;
+  let resizedWidth = Math.max(MIN_CROP_WIDTH, Math.round(targetHeight * aspectRatio));
+  if (imageProcessor) {
+    let imgProcessor = new imageProcessor.ImageProcessor(cropCanvas);
+    try {
+      imgProcessor.resize({ width: resizedWidth, height: targetHeight });
+      let imageTensor2 = createImageTensorFromCanvas(imgProcessor.toCanvas(), resizedWidth, targetHeight);
+      return { imageTensor: imageTensor2, tensorWidth: resizedWidth, tensorHeight: targetHeight };
+    } finally {
+      imgProcessor.destroy();
+    }
+  }
+  let processor = createCanvasProcessor(cropCanvas).resize({ width: resizedWidth, height: targetHeight });
+  let imageTensor = createImageTensor(processor, resizedWidth, targetHeight);
+  return { imageTensor, tensorWidth: resizedWidth, tensorHeight: targetHeight };
+}
+function createImageTensor(processor, width, height) {
+  let canvas = processor.toCanvas();
+  return createImageTensorFromCanvas(canvas, width, height);
+}
+function createImageTensorFromCanvas(canvas, width, height) {
+  let ctx = canvas.getContext("2d");
+  let imageData = ctx.getImageData(0, 0, width, height);
+  let pixelData = imageData.data;
+  let channelSize = height * width;
+  let imageTensor = new Float32Array(3 * channelSize);
+  let INV_127_5 = 1 / 127.5;
+  for (let i = 0, p = 0; i < channelSize; i++, p += 4) {
+    imageTensor[i] = (pixelData[p] ?? 0) * INV_127_5 - 1;
+  }
+  imageTensor.copyWithin(channelSize, 0, channelSize);
+  imageTensor.copyWithin(channelSize * 2, 0, channelSize);
+  return imageTensor;
+}
+var init_image_tensor2 = __esm({
+  "node_modules/ppu-paddle-ocr/core/recognition/image-tensor.js"() {
+    init_ctc();
+  }
+});
+
+// node_modules/ppu-paddle-ocr/core/recognition/strategies.js
+function cropRegion(sourceCanvas, box, canvasOps) {
+  return canvasOps.getToolkit().crop({ bbox: { x0: box.x, y0: box.y, x1: box.x + box.width, y1: box.y + box.height }, canvas: sourceCanvas });
+}
+async function recognizeText(cropCanvas, ctx, charactersDictionary) {
+  let targetHeight = ctx.options.imageHeight ?? 48;
+  let imageProcessor = ctx.engine === "opencv" ? ctx.platform.imageProcessor : void 0;
+  const { imageTensor, tensorWidth, tensorHeight } = await preprocessImage(cropCanvas, targetHeight, imageProcessor, ctx.platform.canvas.createProcessor.bind(ctx.platform.canvas));
+  let inputTensor;
+  try {
+    inputTensor = new ctx.platform.ort.Tensor("float32", imageTensor, [1, 3, tensorHeight, tensorWidth]);
+    let result = await ctx.runInference(inputTensor);
+    let dict = charactersDictionary ?? ctx.options.charactersDictionary ?? [];
+    return decodeResults(result, dict, tensorWidth, ctx.debugging.verbose);
+  } finally {
+    inputTensor?.dispose();
+  }
+}
+function sortByReadingOrder(results) {
+  return [...results].sort((a, b) => {
+    if (Math.abs(a.box.y - b.box.y) < (a.box.height + b.box.height) / 4) {
+      return a.box.x - b.box.x;
+    }
+    return a.box.y - b.box.y;
+  });
+}
+async function runPerBoxStrategy(sourceCanvas, validBoxes, ctx, processBox, charactersDictionary) {
+  let cropsDebugPath = ctx.debugging.debugFolder ? `${ctx.debugging.debugFolder}${ctx.platform.pathSeparator}crops` : "";
+  if (ctx.debugging.debug && cropsDebugPath) {
+    let toolkit = ctx.platform.canvas.getToolkit();
+    if ("clearOutput" in toolkit && typeof toolkit.clearOutput === "function") {
+      toolkit.clearOutput(cropsDebugPath);
+    }
+  }
+  let results = [];
+  for (const { box, index } of validBoxes) {
+    let result = await processBox(sourceCanvas, box, index, validBoxes.length, cropsDebugPath, charactersDictionary);
+    if (result !== null) {
+      results.push(result);
+    }
+  }
+  return sortByReadingOrder(results);
+}
+async function runLineStrategy(sourceCanvas, validBoxes, ctx, charactersDictionary) {
+  let lines = groupBoxesIntoLines(validBoxes);
+  let results = [];
+  for (let lineBoxes of lines) {
+    if (lineBoxes.length === 1) {
+      let lineBox = lineBoxes[0];
+      if (!lineBox) continue;
+      const { box } = lineBox;
+      let cropCanvas = cropRegion(sourceCanvas, box, ctx.platform.canvas);
+      const { text, confidence } = await recognizeText(cropCanvas, ctx, charactersDictionary);
+      results.push({ text, box, confidence });
+    } else {
+      const { mergedCanvas } = mergeLineCrop(sourceCanvas, lineBoxes, ctx.platform.createCanvas.bind(ctx.platform), ctx.platform.canvas);
+      const { text: lineText, confidence: lineConf } = await recognizeText(mergedCanvas, ctx, charactersDictionary);
+      let totalWidth = lineBoxes.reduce((sum, b) => sum + b.box.width, 0);
+      let words = lineText.trim().split(/\s+/).filter((w) => w.length > 0);
+      if (words.length === 0 || lineBoxes.length === 0) {
+        for (const { box } of lineBoxes) {
+          results.push({ text: lineText, box, confidence: lineConf });
+        }
+      } else if (words.length >= lineBoxes.length) {
+        let wordIdx = 0;
+        for (let i = 0; i < lineBoxes.length; i++) {
+          let lb = lineBoxes[i];
+          if (!lb) continue;
+          let proportion = lb.box.width / totalWidth;
+          let wordsForBox = Math.max(1, Math.round(words.length * proportion));
+          let end = Math.min(wordIdx + wordsForBox, words.length);
+          results.push({ text: words.slice(wordIdx, end).join(" "), box: lb.box, confidence: lineConf });
+          wordIdx = end;
+        }
+        if (wordIdx < words.length) {
+          let lastResult = results[results.length - 1];
+          if (lastResult) lastResult.text += ` ${words.slice(wordIdx).join(" ")}`;
+        }
+      } else {
+        for (const { box } of lineBoxes.slice(0, words.length)) {
+          results.push({ text: words.shift() ?? "", box, confidence: lineConf });
+        }
+        for (const { box } of lineBoxes.slice(words.length)) {
+          results.push({ text: "", box, confidence: lineConf });
+        }
+      }
+    }
+  }
+  return sortByReadingOrder(results);
+}
+async function runCrossLineStrategy(sourceCanvas, validBoxes, ctx, charactersDictionary) {
+  let lines = groupBoxesIntoLines(validBoxes);
+  let targetHeight = ctx.options.imageHeight ?? 48;
+  let SEPARATOR_GAP = 20;
+  let lineCrops = [];
+  for (let lineBoxes of lines) {
+    if (lineBoxes.length === 1) {
+      let first = lineBoxes[0];
+      if (!first) continue;
+      lineCrops.push({ canvas: cropRegion(sourceCanvas, first.box, ctx.platform.canvas), boxes: lineBoxes });
+    } else {
+      const { mergedCanvas } = mergeLineCrop(sourceCanvas, lineBoxes, ctx.platform.createCanvas.bind(ctx.platform), ctx.platform.canvas);
+      lineCrops.push({ canvas: mergedCanvas, boxes: lineBoxes });
+    }
+  }
+  let resized = lineCrops.map(({ canvas, boxes }, i) => {
+    let ar = canvas.width / canvas.height;
+    let resizedWidth = Math.max(MIN_CROP_WIDTH, Math.round(targetHeight * ar));
+    return { canvas, boxes, resizedWidth, originalHeight: canvas.height, index: i };
+  });
+  let maxWidth = Math.max(...resized.map((r) => r.resizedWidth));
+  let widthFactor = ctx.options.crossLineWidthFactor ?? 1.5;
+  let batchTargetWidth = Math.round(maxWidth * widthFactor);
+  let batches = packIntoBatches(resized, (item) => item.resizedWidth, batchTargetWidth, SEPARATOR_GAP);
+  let results = [];
+  for (let batch of batches) {
+    let batchSorted = [...batch].sort((a, b) => a.index - b.index);
+    let maxOriginalHeight = Math.max(...batchSorted.map((item) => item.originalHeight));
+    let stretchedWidths = batchSorted.map((item) => {
+      if (item.originalHeight >= maxOriginalHeight) return item.resizedWidth;
+      let heightScale = maxOriginalHeight / item.originalHeight;
+      return Math.max(MIN_CROP_WIDTH, Math.round(item.resizedWidth * heightScale));
+    });
+    let totalCropWidth = stretchedWidths.reduce((sum, w) => sum + w, 0);
+    let totalWidth = totalCropWidth + SEPARATOR_GAP * (batchSorted.length - 1);
+    let batchCanvas = ctx.platform.createCanvas(totalWidth, targetHeight);
+    let bctx = batchCanvas.getContext("2d");
+    bctx.fillStyle = "white";
+    bctx.fillRect(0, 0, totalWidth, targetHeight);
+    let offsetX = 0;
+    for (let i = 0; i < batchSorted.length; i++) {
+      let item = batchSorted[i];
+      let drawWidth = stretchedWidths[i];
+      if (item === void 0 || drawWidth === void 0) continue;
+      bctx.drawImage(item.canvas, 0, 0, item.canvas.width, item.canvas.height, offsetX, 0, drawWidth, targetHeight);
+      offsetX += drawWidth;
+      if (i < batchSorted.length - 1) offsetX += SEPARATOR_GAP;
+    }
+    const { text: batchText, confidence: batchConf } = await recognizeText(batchCanvas, ctx, charactersDictionary);
+    let lineTexts = splitBatchTextByWidths(batchText, stretchedWidths);
+    for (let i = 0; i < batchSorted.length; i++) {
+      let item = batchSorted[i];
+      if (!item) continue;
+      results.push(...distributeLineText(item.boxes, lineTexts[i] ?? "", batchConf));
+    }
+  }
+  return sortByReadingOrder(results);
+}
+var init_strategies = __esm({
+  "node_modules/ppu-paddle-ocr/core/recognition/strategies.js"() {
+    init_ctc();
+    init_ctc();
+    init_image_tensor2();
+    init_line_grouping();
+  }
+});
+
 // node_modules/ppu-paddle-ocr/core/base-recognition.service.js
 var BaseRecognitionService;
 var init_base_recognition_service = __esm({
   "node_modules/ppu-paddle-ocr/core/base-recognition.service.js"() {
-    init_index_canvas_web();
     init_constants();
-    BaseRecognitionService = class _BaseRecognitionService {
+    init_strategies();
+    BaseRecognitionService = class {
       options;
       debugging;
       session;
       platform;
       engine;
-      static BLANK_INDEX = 0;
-      static UNK_TOKEN = "<unk>";
-      static MIN_CROP_WIDTH = 8;
       constructor(platform, session, options = {}, debugging = {}, engine = "opencv") {
         this.platform = platform;
         this.session = session;
@@ -2556,286 +3296,45 @@ var init_base_recognition_service = __esm({
           } else if (this.engine === "opencv" && this.platform.imageProcessor) {
             sourceCanvasForCrop = await this.platform.imageProcessor.prepareCanvas(image);
           } else {
-            sourceCanvasForCrop = await CanvasProcessor.prepareCanvas(image);
+            sourceCanvasForCrop = await this.platform.canvas.prepareCanvas(image);
           }
           let validBoxes = this.filterValidBoxes(detection);
           if (validBoxes.length === 0) {
             return [];
           }
+          let ctx = this.buildContext();
           switch (strategy) {
             case "cross-line":
-              return this.runCrossLineStrategy(sourceCanvasForCrop, validBoxes, charactersDictionary);
+              return await runCrossLineStrategy(sourceCanvasForCrop, validBoxes, ctx, charactersDictionary);
             case "per-line":
-              return this.runLineStrategy(sourceCanvasForCrop, validBoxes, charactersDictionary);
+              return await runLineStrategy(sourceCanvasForCrop, validBoxes, ctx, charactersDictionary);
             case "per-box":
             default:
-              return this.runPerBoxStrategy(sourceCanvasForCrop, validBoxes, charactersDictionary);
+              return await runPerBoxStrategy(sourceCanvasForCrop, validBoxes, ctx, (canvas, box, index, total, debugPath, dict) => this.processBox(canvas, box, index, total, debugPath, dict), charactersDictionary);
           }
         } catch (error) {
           console.error("Error during text recognition:", error instanceof Error ? error.message : String(error));
           return [];
         }
       }
-      async runPerBoxStrategy(sourceCanvas, validBoxes, charactersDictionary) {
-        let cropsDebugPath = this.debugging.debugFolder ? `${this.debugging.debugFolder}${this.platform.pathSeparator}crops` : "";
-        if (this.debugging.debug && cropsDebugPath) {
-          let toolkit = CanvasToolkitBase.getInstance();
-          if ("clearOutput" in toolkit && typeof toolkit.clearOutput === "function") {
-            toolkit.clearOutput(cropsDebugPath);
-          }
-        }
-        let results = [];
-        for (const { box, index } of validBoxes) {
-          let result = await this.processBox(sourceCanvas, box, index, validBoxes.length, cropsDebugPath, charactersDictionary);
-          if (result !== null) {
-            results.push(result);
-          }
-        }
-        return this.sortResultsByReadingOrder(results);
-      }
-      async runLineStrategy(sourceCanvas, validBoxes, charactersDictionary) {
-        let lines = this.groupBoxesIntoLines(validBoxes);
-        let results = [];
-        for (let lineBoxes of lines) {
-          if (lineBoxes.length === 1) {
-            let lineBox = lineBoxes[0];
-            if (!lineBox) continue;
-            const { box } = lineBox;
-            let cropCanvas = this.cropRegion(sourceCanvas, box);
-            const { text, confidence } = await this.recognizeText(cropCanvas, charactersDictionary);
-            results.push({ text, box, confidence });
-          } else {
-            const { mergedCanvas } = this.mergeLineCrop(sourceCanvas, lineBoxes);
-            const { text: lineText, confidence: lineConf } = await this.recognizeText(mergedCanvas, charactersDictionary);
-            let totalWidth = lineBoxes.reduce((sum, b) => sum + b.box.width, 0);
-            let words = lineText.trim().split(/\s+/).filter((w) => w.length > 0);
-            if (words.length === 0 || lineBoxes.length === 0) {
-              for (const { box } of lineBoxes) {
-                results.push({ text: lineText, box, confidence: lineConf });
-              }
-            } else if (words.length >= lineBoxes.length) {
-              let wordIdx = 0;
-              for (let i = 0; i < lineBoxes.length; i++) {
-                let lb = lineBoxes[i];
-                if (!lb) continue;
-                let proportion = lb.box.width / totalWidth;
-                let wordsForBox = Math.max(1, Math.round(words.length * proportion));
-                let end = Math.min(wordIdx + wordsForBox, words.length);
-                results.push({ text: words.slice(wordIdx, end).join(" "), box: lb.box, confidence: lineConf });
-                wordIdx = end;
-              }
-              if (wordIdx < words.length) {
-                let lastResult = results[results.length - 1];
-                if (lastResult) lastResult.text += ` ${words.slice(wordIdx).join(" ")}`;
-              }
-            } else {
-              for (const { box } of lineBoxes.slice(0, words.length)) {
-                results.push({ text: words.shift() ?? "", box, confidence: lineConf });
-              }
-              for (const { box } of lineBoxes.slice(words.length)) {
-                results.push({ text: "", box, confidence: lineConf });
-              }
-            }
-          }
-        }
-        return this.sortResultsByReadingOrder(results);
-      }
-      async runCrossLineStrategy(sourceCanvas, validBoxes, charactersDictionary) {
-        let lines = this.groupBoxesIntoLines(validBoxes);
-        let targetHeight = this.options.imageHeight ?? 48;
-        let SEPARATOR_GAP = 20;
-        let lineCrops = [];
-        for (let lineBoxes of lines) {
-          if (lineBoxes.length === 1) {
-            let firstLineBox = lineBoxes[0];
-            if (!firstLineBox) continue;
-            let canvas = this.cropRegion(sourceCanvas, firstLineBox.box);
-            lineCrops.push({ canvas, boxes: lineBoxes });
-          } else {
-            const { mergedCanvas } = this.mergeLineCrop(sourceCanvas, lineBoxes);
-            lineCrops.push({ canvas: mergedCanvas, boxes: lineBoxes });
-          }
-        }
-        let resized = lineCrops.map(({ canvas, boxes }, i) => {
-          let ar = canvas.width / canvas.height;
-          let resizedWidth = Math.max(_BaseRecognitionService.MIN_CROP_WIDTH, Math.round(targetHeight * ar));
-          return { canvas, boxes, resizedWidth, originalHeight: canvas.height, index: i };
-        });
-        let maxWidth = Math.max(...resized.map((r) => r.resizedWidth));
-        let widthFactor = this.options.crossLineWidthFactor ?? 1.5;
-        let batchTargetWidth = Math.round(maxWidth * widthFactor);
-        let sortedDesc = [...resized].sort((a, b) => b.resizedWidth - a.resizedWidth);
-        let batches = [];
-        let batchWidths = [];
-        for (let item of sortedDesc) {
-          let placed = false;
-          for (let b = 0; b < batches.length; b++) {
-            let currentBatch = batches[b];
-            let currentBatchWidth = batchWidths[b];
-            if (currentBatch === void 0 || currentBatchWidth === void 0) continue;
-            let gapAllowance = SEPARATOR_GAP * currentBatch.length;
-            if (currentBatchWidth + gapAllowance + item.resizedWidth <= batchTargetWidth) {
-              currentBatch.push(item);
-              batchWidths[b] = currentBatchWidth + item.resizedWidth;
-              placed = true;
-              break;
-            }
-          }
-          if (!placed) {
-            batches.push([item]);
-            batchWidths.push(item.resizedWidth);
-          }
-        }
-        let results = [];
-        for (let batch of batches) {
-          let batchSorted = [...batch].sort((a, b) => a.index - b.index);
-          let maxOriginalHeight = Math.max(...batchSorted.map((item) => item.originalHeight));
-          let stretchedWidths = batchSorted.map((item) => {
-            if (item.originalHeight >= maxOriginalHeight) return item.resizedWidth;
-            let heightScale = maxOriginalHeight / item.originalHeight;
-            return Math.max(_BaseRecognitionService.MIN_CROP_WIDTH, Math.round(item.resizedWidth * heightScale));
-          });
-          let totalCropWidth = stretchedWidths.reduce((sum, w) => sum + w, 0);
-          let totalWidth = totalCropWidth + SEPARATOR_GAP * (batchSorted.length - 1);
-          let batchCanvas = this.platform.createCanvas(totalWidth, targetHeight);
-          let ctx = batchCanvas.getContext("2d");
-          ctx.fillStyle = "white";
-          ctx.fillRect(0, 0, totalWidth, targetHeight);
-          let offsetX = 0;
-          for (let i = 0; i < batchSorted.length; i++) {
-            let item = batchSorted[i];
-            let drawWidth = stretchedWidths[i];
-            if (item === void 0 || drawWidth === void 0) continue;
-            ctx.drawImage(item.canvas, 0, 0, item.canvas.width, item.canvas.height, offsetX, 0, drawWidth, targetHeight);
-            offsetX += drawWidth;
-            if (i < batchSorted.length - 1) {
-              offsetX += SEPARATOR_GAP;
-            }
-          }
-          const { text: batchText, confidence: batchConf } = await this.recognizeText(batchCanvas, charactersDictionary);
-          let lineTexts = this.splitBatchTextByWidths(batchText, stretchedWidths);
-          for (let i = 0; i < batchSorted.length; i++) {
-            let item = batchSorted[i];
-            if (!item) continue;
-            let lineText = lineTexts[i] ?? "";
-            if (item.boxes.length === 1) {
-              let firstBox = item.boxes[0];
-              results.push({ text: lineText.trim(), box: firstBox?.box ?? { x: 0, y: 0, width: 0, height: 0 }, confidence: batchConf });
-            } else {
-              let words = lineText.trim().split(/\s+/).filter((w) => w.length > 0);
-              let totalBoxWidth = item.boxes.reduce((sum, b) => sum + b.box.width, 0);
-              let wordIdx = 0;
-              for (const { box } of item.boxes) {
-                if (wordIdx >= words.length) {
-                  results.push({ text: "", box, confidence: batchConf });
-                } else {
-                  let proportion = box.width / totalBoxWidth;
-                  let wordsForBox = Math.max(1, Math.round(words.length * proportion));
-                  let end = Math.min(wordIdx + wordsForBox, words.length);
-                  results.push({ text: words.slice(wordIdx, end).join(" "), box, confidence: batchConf });
-                  wordIdx = end;
-                }
-              }
-            }
-          }
-        }
-        return this.sortResultsByReadingOrder(results);
-      }
-      splitBatchTextByWidths(text, cropWidths) {
-        if (cropWidths.length === 1) {
-          return [text];
-        }
-        let totalWidth = cropWidths.reduce((a, b) => a + b, 0);
-        let chars = [...text];
-        let charWidth = chars.length > 0 ? totalWidth / chars.length : 0;
-        let result = [];
-        let charIdx = 0;
-        for (let i = 0; i < cropWidths.length; i++) {
-          let proportionalChars = i < cropWidths.length - 1 ? Math.round((cropWidths[i] ?? 0) / charWidth) : chars.length - charIdx;
-          let end = Math.min(charIdx + proportionalChars, chars.length);
-          result.push(chars.slice(charIdx, end).join(""));
-          charIdx = end;
-        }
-        return result;
+      buildContext() {
+        return { platform: this.platform, options: this.options, debugging: this.debugging, engine: this.engine, runInference: (t) => this.runInference(t) };
       }
       filterValidBoxes(boxes) {
         return boxes.map((box, index) => ({ box, index })).filter(({ box, index }) => this.isValidBox(box, index));
       }
-      async processBoxesInParallel(sourceCanvas, boxData, charactersDictionary) {
-        let cropsDebugPath = this.debugging.debugFolder ? `${this.debugging.debugFolder}${this.platform.pathSeparator}crops` : "";
-        if (this.debugging.debug && cropsDebugPath) {
-          let toolkit = CanvasToolkitBase.getInstance();
-          if ("clearOutput" in toolkit && typeof toolkit.clearOutput === "function") {
-            toolkit.clearOutput(cropsDebugPath);
-          }
-        }
-        let results = [];
-        for (const { box, index } of boxData) {
-          let result = await this.processBox(sourceCanvas, box, index, boxData.length, cropsDebugPath, charactersDictionary);
-          if (result !== null) {
-            results.push(result);
-          }
-        }
-        return results;
-      }
-      groupBoxesIntoLines(boxes) {
-        if (boxes.length === 0) return [];
-        let sorted = [...boxes].sort((a, b) => a.box.y - b.box.y || a.box.x - b.box.x);
-        let lines = [];
-        let firstSorted = sorted[0];
-        if (!firstSorted) return [];
-        let currentLine = [firstSorted];
-        let avgHeight = firstSorted.box.height;
-        for (let i = 1; i < sorted.length; i++) {
-          let current = sorted[i];
-          let previous = sorted[i - 1];
-          if (!current || !previous) continue;
-          let verticalGap = Math.abs(current.box.y - previous.box.y);
-          let threshold = avgHeight * 0.5;
-          if (verticalGap <= threshold) {
-            currentLine.push(current);
-            avgHeight = currentLine.reduce((sum, item) => sum + item.box.height, 0) / currentLine.length;
-          } else {
-            currentLine.sort((a, b) => a.box.x - b.box.x);
-            lines.push(currentLine);
-            currentLine = [current];
-            avgHeight = current.box.height;
-          }
-        }
-        if (currentLine.length > 0) {
-          currentLine.sort((a, b) => a.box.x - b.box.x);
-          lines.push(currentLine);
-        }
-        return lines;
-      }
-      mergeLineCrop(sourceCanvas, lineBoxes) {
-        let minX = Math.min(...lineBoxes.map((b) => b.box.x));
-        let minY = Math.min(...lineBoxes.map((b) => b.box.y));
-        let maxRight = Math.max(...lineBoxes.map((b) => b.box.x + b.box.width));
-        let maxBottom = Math.max(...lineBoxes.map((b) => b.box.y + b.box.height));
-        let mergedBox = { x: minX, y: minY, width: maxRight - minX, height: maxBottom - minY };
-        let commonHeight = maxBottom - minY;
-        let commonWidth = lineBoxes.reduce((sum, b) => sum + Math.round(b.box.width * (commonHeight / b.box.height)), 0);
-        let mergedCanvas = this.platform.createCanvas(commonWidth, commonHeight);
-        let ctx = mergedCanvas.getContext("2d");
-        let offsetX = 0;
-        for (const { box } of lineBoxes) {
-          let cropped = CanvasToolkitBase.getInstance().crop({ bbox: { x0: box.x, y0: box.y, x1: box.x + box.width, y1: box.y + box.height }, canvas: sourceCanvas });
-          let scaleX = commonHeight / box.height;
-          let stretchedWidth = Math.round(box.width * scaleX);
-          ctx.drawImage(cropped, 0, 0, box.width, box.height, offsetX, 0, stretchedWidth, commonHeight);
-          offsetX += stretchedWidth;
-        }
-        return { mergedCanvas, mergedBox };
-      }
       async processBox(sourceCanvas, box, index, totalBoxes, debugPath, charactersDictionary) {
         let start = Date.now();
         try {
-          let cropCanvas = this.cropRegion(sourceCanvas, box);
-          const { text: recognizedText, confidence } = await this.recognizeText(cropCanvas, charactersDictionary);
+          let cropCanvas = this.platform.canvas.getToolkit().crop({ bbox: { x0: box.x, y0: box.y, x1: box.x + box.width, y1: box.y + box.height }, canvas: sourceCanvas });
+          let ctx = this.buildContext();
+          const { text: recognizedText, confidence } = await this.recognizeTextViaContext(cropCanvas, ctx, charactersDictionary);
           if (this.debugging.debug && debugPath) {
-            await this.saveDebugCrop(cropCanvas, index, debugPath);
-            this.logProcessingDetails(box, index, totalBoxes, recognizedText, start);
+            await this.platform.saveDebugImage(cropCanvas, `crop_${String(index).padStart(3, "0")}.png`, debugPath);
+            let processingTime = Date.now() - start;
+            this.log(`Box ${index + 1}/${totalBoxes}: [x:${box.x}, y:${box.y}, w:${box.width}, h:${box.height}]
+	 \u2192 "${recognizedText}" (processed in ${processingTime}ms)
+`);
           }
           return { text: recognizedText, box, confidence };
         } catch (e) {
@@ -2844,15 +3343,21 @@ var init_base_recognition_service = __esm({
           return null;
         }
       }
-      sortResultsByReadingOrder(results) {
-        return [...results].sort((a, b) => {
-          let boxA = a.box;
-          let boxB = b.box;
-          if (Math.abs(boxA.y - boxB.y) < (boxA.height + boxB.height) / 4) {
-            return boxA.x - boxB.x;
-          }
-          return boxA.y - boxB.y;
-        });
+      async recognizeTextViaContext(cropCanvas, ctx, charactersDictionary) {
+        const { preprocessImage: preprocessImage2 } = await Promise.resolve().then(() => (init_image_tensor2(), image_tensor_exports));
+        const { decodeResults: decodeResults2 } = await Promise.resolve().then(() => (init_ctc(), ctc_exports));
+        let targetHeight = ctx.options.imageHeight ?? 48;
+        let imageProcessor = ctx.engine === "opencv" ? ctx.platform.imageProcessor : void 0;
+        const { imageTensor, tensorWidth, tensorHeight } = await preprocessImage2(cropCanvas, targetHeight, imageProcessor, ctx.platform.canvas.createProcessor.bind(ctx.platform.canvas));
+        let inputTensor;
+        try {
+          inputTensor = new ctx.platform.ort.Tensor("float32", imageTensor, [1, 3, tensorHeight, tensorWidth]);
+          let result = await ctx.runInference(inputTensor);
+          let dict = charactersDictionary ?? ctx.options.charactersDictionary ?? [];
+          return decodeResults2(result, dict, tensorWidth, this.debugging.verbose);
+        } finally {
+          inputTensor?.dispose();
+        }
       }
       isValidBox(box, index) {
         if (box.width <= 0 || box.height <= 0) {
@@ -2860,71 +3365,6 @@ var init_base_recognition_service = __esm({
           return false;
         }
         return true;
-      }
-      cropRegion(sourceCanvas, box) {
-        return CanvasToolkitBase.getInstance().crop({ bbox: { x0: box.x, y0: box.y, x1: box.x + box.width, y1: box.y + box.height }, canvas: sourceCanvas });
-      }
-      async saveDebugCrop(cropCanvas, index, outputPath) {
-        await this.platform.saveDebugImage(cropCanvas, `crop_${String(index).padStart(3, "0")}.png`, outputPath);
-      }
-      logProcessingDetails(box, index, totalBoxes, text, startTime) {
-        let processingTime = Date.now() - startTime;
-        this.log(`Box ${index + 1}/${totalBoxes}: [x:${box.x}, y:${box.y}, w:${box.width}, h:${box.height}]
-	 \u2192 "${text}" (processed in ${processingTime}ms)
-`);
-      }
-      async recognizeText(cropCanvas, charactersDictionary) {
-        const { imageTensor, tensorWidth, tensorHeight } = await this.preprocessImage(cropCanvas);
-        let inputTensor;
-        try {
-          inputTensor = new this.platform.ort.Tensor("float32", imageTensor, [1, 3, tensorHeight, tensorWidth]);
-          let results = await this.runInference(inputTensor);
-          return this.decodeResults(results, charactersDictionary);
-        } finally {
-          inputTensor?.dispose();
-        }
-      }
-      async preprocessImage(cropCanvas) {
-        let targetHeight = this.options.imageHeight ?? 48;
-        let originalWidth = cropCanvas.width;
-        let originalHeight = cropCanvas.height;
-        if (originalHeight === 0 || originalWidth === 0) {
-          throw new Error(`Crop dimensions are zero: ${originalWidth}x${originalHeight}`);
-        }
-        let aspectRatio = originalWidth / originalHeight;
-        let resizedWidth = Math.max(_BaseRecognitionService.MIN_CROP_WIDTH, Math.round(targetHeight * aspectRatio));
-        if (this.engine === "opencv" && this.platform.imageProcessor) {
-          let imgProcessor = new this.platform.imageProcessor.ImageProcessor(cropCanvas);
-          try {
-            imgProcessor.resize({ width: resizedWidth, height: targetHeight });
-            let imageTensor = this.createImageTensorFromCanvas(imgProcessor.toCanvas(), resizedWidth, targetHeight);
-            return { imageTensor, tensorWidth: resizedWidth, tensorHeight: targetHeight };
-          } finally {
-            imgProcessor.destroy();
-          }
-        } else {
-          let processor = new CanvasProcessor(cropCanvas).resize({ width: resizedWidth, height: targetHeight });
-          let imageTensor = this.createImageTensor(processor, resizedWidth, targetHeight);
-          return { imageTensor, tensorWidth: resizedWidth, tensorHeight: targetHeight };
-        }
-      }
-      createImageTensor(processor, width, height) {
-        let canvas = processor.toCanvas();
-        return this.createImageTensorFromCanvas(canvas, width, height);
-      }
-      createImageTensorFromCanvas(canvas, width, height) {
-        let ctx = canvas.getContext("2d");
-        let imageData = ctx.getImageData(0, 0, width, height);
-        let pixelData = imageData.data;
-        let channelSize = height * width;
-        let imageTensor = new Float32Array(3 * channelSize);
-        let INV_127_5 = 1 / 127.5;
-        for (let i = 0, p = 0; i < channelSize; i++, p += 4) {
-          imageTensor[i] = (pixelData[p] ?? 0) * INV_127_5 - 1;
-        }
-        imageTensor.copyWithin(channelSize, 0, channelSize);
-        imageTensor.copyWithin(channelSize * 2, 0, channelSize);
-        return imageTensor;
       }
       async runInference(inputTensor) {
         let feeds = { x: inputTensor };
@@ -2935,69 +3375,6 @@ var init_base_recognition_service = __esm({
           throw new Error(`Recognition output tensor '${outputNodeName}' not found. Available keys: ${Object.keys(results)}`);
         }
         return outputTensor;
-      }
-      decodeResults(outputTensor, charactersDictionary) {
-        let outputData = outputTensor.data;
-        let outputShape = outputTensor.dims;
-        let sequenceLength = outputShape[1];
-        let numClasses = outputShape[2];
-        let rawDict = charactersDictionary || this.options.charactersDictionary;
-        if (!rawDict) {
-          return { text: "", confidence: 0 };
-        }
-        let dict = rawDict;
-        if (rawDict.length === numClasses - 1) {
-          dict = ["", ...rawDict];
-        } else if (numClasses !== rawDict.length) {
-          console.warn(`Warning: Model output classes (${numClasses}) does not match dictionary length (${rawDict.length}).
- Consider using our model & dictionary catalogue at https://github.com/PT-Perkasa-Pilar-Utama/ppu-paddle-ocr-models.`);
-        }
-        return this.ctcGreedyDecode(outputData, sequenceLength, numClasses, dict);
-      }
-      ctcGreedyDecode(logits, sequenceLength, numClasses, charDict) {
-        let dictLen = charDict.length;
-        let lastDictIndex = dictLen - 1;
-        let BLANK = _BaseRecognitionService.BLANK_INDEX;
-        let UNK = _BaseRecognitionService.UNK_TOKEN;
-        let decodedText = "";
-        let lastCharIndex = -1;
-        let confidenceSum = 0;
-        let confidenceCount = 0;
-        for (let t = 0; t < sequenceLength; t++) {
-          let base = t * numClasses;
-          let maxProb = logits[base] ?? -1 / 0;
-          let maxIndex = 0;
-          for (let c = 1; c < numClasses; c++) {
-            let prob = logits[base + c] ?? -1 / 0;
-            if (prob > maxProb) {
-              maxProb = prob;
-              maxIndex = c;
-            }
-          }
-          if (maxIndex === BLANK || maxIndex === lastCharIndex) {
-            lastCharIndex = maxIndex;
-            continue;
-          }
-          if (maxIndex >= 0 && maxIndex < dictLen) {
-            let char = charDict[maxIndex] ?? "";
-            if (maxIndex === lastDictIndex) {
-              if (char !== UNK) {
-                decodedText += " ";
-                confidenceSum += maxProb;
-                confidenceCount++;
-              }
-            } else {
-              decodedText += char;
-              confidenceSum += maxProb;
-              confidenceCount++;
-            }
-          } else {
-            console.warn(`Decoded index ${maxIndex} out of bounds for charDict (length ${dictLen}) at t=${t}`);
-          }
-          lastCharIndex = maxIndex;
-        }
-        let confidence = confidenceCount > 0 ? confidenceSum / confidenceCount : 0;
-        return { text: decodedText, confidence };
       }
     };
   }
@@ -3024,6 +3401,7 @@ var init_paddle_ocr_service_web = __esm({
     init_ort_wasm_min();
     init_base_paddle_ocr_service();
     init_session_factory();
+    init_model_catalogue();
     init_utils();
     init_detection_service_web();
     init_platform_web();
@@ -3046,11 +3424,7 @@ var init_paddle_ocr_service_web = __esm({
         }
         let sourceUrl = typeof source === "string" ? source : defaultUrl;
         this.log(`Fetching resource from URL: ${sourceUrl}`);
-        let response = await fetch(sourceUrl);
-        if (!response.ok) {
-          throw new Error(`Failed to fetch resource from ${sourceUrl}`);
-        }
-        return response.arrayBuffer();
+        return fetchArrayBufferWithRetry(sourceUrl);
       }
       async _resolveSessionExecutionProviders() {
         let current = this.options.session ?? {};
@@ -3105,6 +3479,7 @@ var init_paddle_ocr_service_web = __esm({
         let modelBuffer = await this._loadResource(model, DEFAULT_MODEL_URLS.detection);
         await this.detectionSession?.release();
         this.detectionSession = await this._createSession(new Uint8Array(modelBuffer));
+        this.detector = new DetectionService(this.detectionSession, this.options.detection, this.options.debugging);
         if (this.options.model) this.options.model.detection = modelBuffer;
         this.log("Detection model changed successfully.");
       }
@@ -3113,6 +3488,7 @@ var init_paddle_ocr_service_web = __esm({
         let modelBuffer = await this._loadResource(model, DEFAULT_MODEL_URLS.recognition);
         await this.recognitionSession?.release();
         this.recognitionSession = await this._createSession(new Uint8Array(modelBuffer));
+        this.recognitor = new RecognitionService(this.recognitionSession, this.options.recognition, this.options.debugging);
         if (this.options.model) this.options.model.recognition = modelBuffer;
         this.log("Recognition model changed successfully.");
       }
@@ -3145,7 +3521,7 @@ var init_paddle_ocr_service_web = __esm({
 // node_modules/ppu-paddle-ocr/web/index.js
 var init_web2 = __esm({
   "node_modules/ppu-paddle-ocr/web/index.js"() {
-    init_base_paddle_ocr_service();
+    init_model_catalogue();
     init_paddle_ocr_service_web();
     init_detection_service_web();
     init_recognition_service_web();
@@ -3159,9 +3535,9 @@ var require_offscreen = __commonJS({
   "src/offscreen.js"() {
     init_web2();
     init_ort_wasm_min();
-    O.wasm.numThreads = 1;
-    O.wasm.proxy = false;
-    O.wasm.wasmPaths = chrome.runtime.getURL("/");
+    B.wasm.numThreads = 1;
+    B.wasm.proxy = false;
+    B.wasm.wasmPaths = chrome.runtime.getURL("/");
     var ocrService = null;
     var initStatus = "initializing";
     var initError = null;
@@ -3170,8 +3546,8 @@ var require_offscreen = __commonJS({
       try {
         ocrService = new PaddleOcrService({
           model: {
-            detection: chrome.runtime.getURL("models/det.onnx"),
-            recognition: chrome.runtime.getURL("models/rec.onnx"),
+            detection: chrome.runtime.getURL("models/det.ort"),
+            recognition: chrome.runtime.getURL("models/rec.ort"),
             charactersDictionary: chrome.runtime.getURL("models/dict.txt")
           },
           session: {
@@ -3242,7 +3618,7 @@ export default require_offscreen();
 
 onnxruntime-web/dist/ort.wasm.min.mjs:
   (*!
-   * ONNX Runtime Web v1.26.0
+   * ONNX Runtime Web v1.27.0
    * Copyright (c) Microsoft Corporation. All rights reserved.
    * Licensed under the MIT License.
    *)
