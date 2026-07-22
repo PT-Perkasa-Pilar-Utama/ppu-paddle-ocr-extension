@@ -47,7 +47,7 @@ var init_model_catalogue = __esm({
     V5_TAMIL_MOBILE_MODEL = { detection: `${MODEL_BASE_URL}/detection/PP-OCRv5_mobile_det_infer.onnx`, recognition: `${MODEL_BASE_URL}/recognition/multi/ta/v5/ta_PP-OCRv5_mobile_rec_infer.onnx`, charactersDictionary: `${DICT_BASE_URL}/recognition/multi/ta/v5/ppocrv5_ta_dict.txt` };
     V5_TELUGU_MOBILE_MODEL = { detection: `${MODEL_BASE_URL}/detection/PP-OCRv5_mobile_det_infer.onnx`, recognition: `${MODEL_BASE_URL}/recognition/multi/te/v5/te_PP-OCRv5_mobile_rec_infer.onnx`, charactersDictionary: `${DICT_BASE_URL}/recognition/multi/te/v5/ppocrv5_te_dict.txt` };
     V5_THAI_MOBILE_MODEL = { detection: `${MODEL_BASE_URL}/detection/PP-OCRv5_mobile_det_infer.onnx`, recognition: `${MODEL_BASE_URL}/recognition/multi/th/v5/th_PP-OCRv5_mobile_rec_infer.onnx`, charactersDictionary: `${DICT_BASE_URL}/recognition/multi/th/v5/ppocrv5_th_dict.txt` };
-    DEFAULT_MODEL = V6_SMALL_MODEL;
+    DEFAULT_MODEL = V6_TINY_MODEL;
     DEFAULT_MODEL_URLS = DEFAULT_MODEL;
   }
 });
@@ -1601,8 +1601,8 @@ var DEFAULT_DEBUGGING_OPTIONS, DEFAULT_DETECTION_OPTIONS, DEFAULT_RECOGNITION_OP
 var init_constants = __esm({
   "node_modules/ppu-paddle-ocr/constants.js"() {
     DEFAULT_DEBUGGING_OPTIONS = { verbose: false, debug: false, debugFolder: "out" };
-    DEFAULT_DETECTION_OPTIONS = { mean: [0.485, 0.456, 0.406], stdDeviation: [0.229, 0.224, 0.225], maxSideLength: 640, minimumAreaThreshold: 50, paddingVertical: 0.4, paddingHorizontal: 0.6 };
-    DEFAULT_RECOGNITION_OPTIONS = { imageHeight: 48, strategy: "per-box", crossLineWidthFactor: 1, charactersDictionary: [] };
+    DEFAULT_DETECTION_OPTIONS = { mean: [0.485, 0.456, 0.406], stdDeviation: [0.229, 0.224, 0.225], maxSideLength: "auto", minimumAreaThreshold: 20, paddingVertical: 0.4, paddingHorizontal: 0.6 };
+    DEFAULT_RECOGNITION_OPTIONS = { imageHeight: 48, strategy: "per-line", crossLineWidthFactor: 1, minimumConfidence: 0.5, charactersDictionary: [] };
     DEFAULT_SESSION_OPTIONS = { executionProviders: ["cpu"], graphOptimizationLevel: "all", enableCpuMemArena: true, enableMemPattern: true, executionMode: "sequential", interOpNumThreads: 0, intraOpNumThreads: 0 };
     DEFAULT_PROCESSING_ENGINE = "opencv";
     DEFAULT_PROCESSING_OPTIONS = { engine: DEFAULT_PROCESSING_ENGINE };
@@ -1667,6 +1667,10 @@ var init_utils = __esm({
 });
 
 // node_modules/ppu-paddle-ocr/core/detection/box-geometry.js
+function resolveMaxSideLength(maxSideLength, longestSide) {
+  if (maxSideLength !== "auto") return maxSideLength;
+  return Math.min(1920, Math.max(960, Math.round(longestSide * 0.75 / 32) * 32));
+}
 function calculateResizeDimensions(originalWidth, originalHeight, maxSideLength) {
   let resizeW = originalWidth;
   let resizeH = originalHeight;
@@ -1856,7 +1860,7 @@ var init_base_detection_service = __esm({
       }
       async preprocessDetection(canvas) {
         const { width: originalWidth, height: originalHeight } = canvas;
-        let maxSideLength = this.options.maxSideLength ?? 640;
+        let maxSideLength = resolveMaxSideLength(this.options.maxSideLength ?? "auto", Math.max(originalWidth, originalHeight));
         const { width: resizeW, height: resizeH, ratio: resizeRatio } = calculateResizeDimensions(originalWidth, originalHeight, maxSideLength);
         let width = Math.ceil(resizeW / 32) * 32;
         let height = Math.ceil(resizeH / 32) * 32;
@@ -1915,7 +1919,7 @@ var init_base_detection_service = __esm({
         }
       }
       postprocessWithCanvasNative(canvas, resizeRatio, originalWidth, originalHeight, minBoxAreaOnPadded, paddingVertical, paddingHorizontal) {
-        let processor = this.platform.canvas.createProcessor(canvas).grayscale().threshold({ thresh: 127 });
+        let processor = this.platform.canvas.createProcessor(canvas).grayscale().threshold({ thresh: 0 });
         let regions = processor.findRegions({ foreground: "light", minArea: minBoxAreaOnPadded, thresh: 0, padding: { vertical: paddingVertical, horizontal: paddingHorizontal }, scale: 1 / resizeRatio });
         let boxes = extractBoxesFromRegions(regions, originalWidth, originalHeight);
         this.log(`Found ${boxes.length} potential text boxes (canvas-native)`);
@@ -2181,16 +2185,21 @@ function mergeLineCrop(sourceCanvas, lineBoxes, createCanvas, canvasOps) {
   let maxBottom = Math.max(...lineBoxes.map((b) => b.box.y + b.box.height));
   let mergedBox = { x: minX, y: minY, width: maxRight - minX, height: maxBottom - minY };
   let commonHeight = maxBottom - minY;
+  let gap = Math.max(1, Math.round(commonHeight * 0.4));
   let widths = lineBoxes.map(({ box }) => Math.max(1, Math.round(box.width * Math.min(commonHeight / box.height, MAX_BOX_STRETCH))));
-  let totalWidth = widths.reduce((sum, w) => sum + w, 0);
+  let totalWidth = widths.reduce((sum, w) => sum + w, 0) + gap * (lineBoxes.length - 1);
   if (totalWidth > MAX_MERGED_WIDTH) {
     let shrink = MAX_MERGED_WIDTH / totalWidth;
     widths = widths.map((w) => Math.max(1, Math.round(w * shrink)));
+    gap = Math.max(1, Math.floor(gap * shrink));
   }
-  let commonWidth = widths.reduce((sum, w) => sum + w, 0);
+  let commonWidth = widths.reduce((sum, w) => sum + w, 0) + gap * (lineBoxes.length - 1);
   let mergedCanvas = createCanvas(commonWidth, commonHeight);
   let ctx = mergedCanvas.getContext("2d");
+  ctx.fillStyle = "white";
+  ctx.fillRect(0, 0, commonWidth, commonHeight);
   let offsetX = 0;
+  let cropWidths = [];
   for (let i = 0; i < lineBoxes.length; i++) {
     let entry = lineBoxes[i];
     let stretchedWidth = widths[i];
@@ -2198,9 +2207,30 @@ function mergeLineCrop(sourceCanvas, lineBoxes, createCanvas, canvasOps) {
     const { box } = entry;
     let cropped = canvasOps.getToolkit().crop({ bbox: { x0: box.x, y0: box.y, x1: box.x + box.width, y1: box.y + box.height }, canvas: sourceCanvas });
     ctx.drawImage(cropped, 0, 0, box.width, box.height, offsetX, 0, stretchedWidth, commonHeight);
-    offsetX += stretchedWidth;
+    let trailingGap = i < lineBoxes.length - 1 ? gap : 0;
+    cropWidths.push(stretchedWidth + trailingGap);
+    offsetX += stretchedWidth + trailingGap;
   }
-  return { mergedCanvas, mergedBox };
+  return { mergedCanvas, mergedBox, cropWidths };
+}
+function splitTextByPositions(text, positions, segmentWidths) {
+  let chars = [...text];
+  if (positions.length !== chars.length || segmentWidths.length === 0) {
+    return splitBatchTextByWidths(text, segmentWidths);
+  }
+  let totalWidth = segmentWidths.reduce((a, b) => a + b, 0);
+  let result = segmentWidths.map(() => "");
+  let seg = 0;
+  let segEnd = (segmentWidths[0] ?? 0) / totalWidth;
+  for (let i = 0; i < chars.length; i++) {
+    let pos = positions[i] ?? 0;
+    while (pos >= segEnd && seg < segmentWidths.length - 1) {
+      seg++;
+      segEnd += (segmentWidths[seg] ?? 0) / totalWidth;
+    }
+    result[seg] += chars[i] ?? "";
+  }
+  return result;
 }
 function splitBatchTextByWidths(text, cropWidths) {
   if (cropWidths.length === 1) {
@@ -2212,10 +2242,25 @@ function splitBatchTextByWidths(text, cropWidths) {
   let result = [];
   let charIdx = 0;
   for (let i = 0; i < cropWidths.length; i++) {
-    let proportionalChars = i < cropWidths.length - 1 ? Math.round((cropWidths[i] ?? 0) / charWidth) : chars.length - charIdx;
-    let end = Math.min(charIdx + proportionalChars, chars.length);
-    result.push(chars.slice(charIdx, end).join(""));
-    charIdx = end;
+    if (i === cropWidths.length - 1) {
+      result.push(chars.slice(charIdx).join(""));
+      break;
+    }
+    let ideal = Math.min(charIdx + Math.round((cropWidths[i] ?? 0) / charWidth), chars.length);
+    let cut = ideal;
+    let skipSpace = false;
+    for (let d = 0; d <= CUT_SNAP_RANGE && !skipSpace; d++) {
+      for (let cand of [ideal - d, ideal + d]) {
+        let ch = chars[cand];
+        if (cand > charIdx && cand < chars.length && ch !== void 0 && /\s/.test(ch)) {
+          cut = cand;
+          skipSpace = true;
+          break;
+        }
+      }
+    }
+    result.push(chars.slice(charIdx, cut).join(""));
+    charIdx = skipSpace ? cut + 1 : cut;
   }
   return result;
 }
@@ -2244,33 +2289,12 @@ function packIntoBatches(items, widthOf, targetWidth, separatorGap) {
   }
   return batches;
 }
-function distributeLineText(boxes, lineText, confidence) {
-  if (boxes.length === 1) {
-    let first = boxes[0];
-    return [{ text: lineText.trim(), box: first?.box ?? { x: 0, y: 0, width: 0, height: 0 }, confidence }];
-  }
-  let words = lineText.trim().split(/\s+/).filter((w) => w.length > 0);
-  let totalBoxWidth = boxes.reduce((sum, b) => sum + b.box.width, 0);
-  let results = [];
-  let wordIdx = 0;
-  for (const { box } of boxes) {
-    if (wordIdx >= words.length) {
-      results.push({ text: "", box, confidence });
-      continue;
-    }
-    let proportion = box.width / totalBoxWidth;
-    let wordsForBox = Math.max(1, Math.round(words.length * proportion));
-    let end = Math.min(wordIdx + wordsForBox, words.length);
-    results.push({ text: words.slice(wordIdx, end).join(" "), box, confidence });
-    wordIdx = end;
-  }
-  return results;
-}
-var MAX_BOX_STRETCH, MAX_MERGED_WIDTH;
+var MAX_BOX_STRETCH, MAX_MERGED_WIDTH, CUT_SNAP_RANGE;
 var init_line_grouping = __esm({
   "node_modules/ppu-paddle-ocr/core/recognition/line-grouping.js"() {
     MAX_BOX_STRETCH = 4;
     MAX_MERGED_WIDTH = 16384;
+    CUT_SNAP_RANGE = 4;
   }
 });
 
@@ -2980,15 +3004,61 @@ __export(ctc_exports, {
   MIN_CROP_WIDTH: () => MIN_CROP_WIDTH,
   UNK_TOKEN: () => UNK_TOKEN,
   ctcGreedyDecode: () => ctcGreedyDecode,
-  decodeResults: () => decodeResults
+  decodeResults: () => decodeResults,
+  injectGapSpaces: () => injectGapSpaces,
+  refineDecodedChars: () => refineDecodedChars
 });
+function charClass(char) {
+  if (new RegExp("\\p{L}", "u").test(char)) return 0;
+  if (new RegExp("\\p{N}", "u").test(char)) return 1;
+  return 2;
+}
+function injectGapSpaces(chars, positions) {
+  if (chars.length < 4) return;
+  let deltas = [];
+  for (let i = 1; i < positions.length; i++) {
+    deltas.push((positions[i] ?? 0) - (positions[i - 1] ?? 0));
+  }
+  let sorted = [...deltas].sort((a, b) => a - b);
+  let median = sorted[Math.floor(sorted.length / 2)] ?? 0;
+  if (median <= 0) return;
+  let quantum = sorted.find((d) => d > 0) ?? 0;
+  if (quantum <= 0) return;
+  for (let i = chars.length - 1; i >= 1; i--) {
+    let prev = positions[i - 1] ?? 0;
+    let curr = positions[i] ?? 0;
+    let k2 = charClass(chars[i] ?? "") === charClass(chars[i - 1] ?? "") ? GAP_QUANTA_SAME_CLASS : GAP_QUANTA_CROSS_CLASS;
+    if (curr - prev > median + k2 * quantum && chars[i] !== " " && chars[i - 1] !== " " && chars[i] !== chars[i - 1]) {
+      chars.splice(i, 0, " ");
+      positions.splice(i, 0, (prev + curr) / 2);
+    }
+  }
+}
+function refineDecodedChars(chars, positions) {
+  for (let i = chars.length - 1; i >= 1; i--) {
+    if (chars[i] === " " && chars[i - 1] === " ") {
+      chars.splice(i, 1);
+      positions.splice(i, 1);
+    }
+  }
+  if (CJK_PATTERN.test(chars.join(""))) return;
+  for (let i = 0; i < chars.length; i++) {
+    let code = chars[i]?.codePointAt(0) ?? 0;
+    if (code >= 65281 && code <= 65374) {
+      chars[i] = String.fromCodePoint(code - FULLWIDTH_OFFSET);
+    } else if (code === 12288) {
+      chars[i] = " ";
+    }
+  }
+}
 function ctcGreedyDecode(logits, sequenceLength, numClasses, charDict) {
   let dictLen = charDict.length;
   let lastDictIndex = dictLen - 1;
-  let decodedText = "";
+  let emitted = [];
   let lastCharIndex = -1;
   let confidenceSum = 0;
   let confidenceCount = 0;
+  let positions = [];
   for (let t = 0; t < sequenceLength; t++) {
     let base = t * numClasses;
     let maxProb = logits[base] ?? -1 / 0;
@@ -3008,20 +3078,24 @@ function ctcGreedyDecode(logits, sequenceLength, numClasses, charDict) {
       let char = charDict[maxIndex] ?? "";
       if (maxIndex === lastDictIndex) {
         if (char !== UNK_TOKEN) {
-          decodedText += " ";
+          emitted.push(" ");
           confidenceSum += maxProb;
           confidenceCount++;
+          positions.push((t + 0.5) / sequenceLength);
         }
       } else {
-        decodedText += char;
+        emitted.push(char);
         confidenceSum += maxProb;
         confidenceCount++;
+        positions.push((t + 0.5) / sequenceLength);
       }
     }
     lastCharIndex = maxIndex;
   }
+  injectGapSpaces(emitted, positions);
+  refineDecodedChars(emitted, positions);
   let confidence = confidenceCount > 0 ? confidenceSum / confidenceCount : 0;
-  return { text: decodedText, confidence };
+  return { text: emitted.join(""), confidence, positions };
 }
 function decodeResults(outputTensor, charactersDictionary, numClassesFromShape, verbose = false) {
   let outputData = outputTensor.data;
@@ -3029,7 +3103,7 @@ function decodeResults(outputTensor, charactersDictionary, numClassesFromShape, 
   let sequenceLength = outputShape[1];
   let numClasses = outputShape[2] ?? numClassesFromShape;
   if (!charactersDictionary) {
-    return { text: "", confidence: 0 };
+    return { text: "", confidence: 0, positions: [] };
   }
   let dict = charactersDictionary;
   if (charactersDictionary.length === numClasses - 1) {
@@ -3040,12 +3114,16 @@ function decodeResults(outputTensor, charactersDictionary, numClassesFromShape, 
   }
   return ctcGreedyDecode(outputData, sequenceLength, numClasses, dict);
 }
-var BLANK_INDEX, UNK_TOKEN, MIN_CROP_WIDTH;
+var BLANK_INDEX, UNK_TOKEN, MIN_CROP_WIDTH, GAP_QUANTA_CROSS_CLASS, GAP_QUANTA_SAME_CLASS, FULLWIDTH_OFFSET, CJK_PATTERN;
 var init_ctc = __esm({
   "node_modules/ppu-paddle-ocr/core/recognition/ctc.js"() {
     BLANK_INDEX = 0;
     UNK_TOKEN = "<unk>";
     MIN_CROP_WIDTH = 8;
+    GAP_QUANTA_CROSS_CLASS = 1.5;
+    GAP_QUANTA_SAME_CLASS = 2.5;
+    FULLWIDTH_OFFSET = 65248;
+    CJK_PATTERN = /[\u2E80-\u9FFF\uAC00-\uD7AF\uF900-\uFAFF]/;
   }
 });
 
@@ -3157,36 +3235,13 @@ async function runLineStrategy(sourceCanvas, validBoxes, ctx, charactersDictiona
       const { text, confidence } = await recognizeText(cropCanvas, ctx, charactersDictionary);
       results.push({ text, box, confidence });
     } else {
-      const { mergedCanvas } = mergeLineCrop(sourceCanvas, lineBoxes, ctx.platform.createCanvas.bind(ctx.platform), ctx.platform.canvas);
-      const { text: lineText, confidence: lineConf } = await recognizeText(mergedCanvas, ctx, charactersDictionary);
-      let totalWidth = lineBoxes.reduce((sum, b) => sum + b.box.width, 0);
-      let words = lineText.trim().split(/\s+/).filter((w) => w.length > 0);
-      if (words.length === 0 || lineBoxes.length === 0) {
-        for (const { box } of lineBoxes) {
-          results.push({ text: lineText, box, confidence: lineConf });
-        }
-      } else if (words.length >= lineBoxes.length) {
-        let wordIdx = 0;
-        for (let i = 0; i < lineBoxes.length; i++) {
-          let lb = lineBoxes[i];
-          if (!lb) continue;
-          let proportion = lb.box.width / totalWidth;
-          let wordsForBox = Math.max(1, Math.round(words.length * proportion));
-          let end = Math.min(wordIdx + wordsForBox, words.length);
-          results.push({ text: words.slice(wordIdx, end).join(" "), box: lb.box, confidence: lineConf });
-          wordIdx = end;
-        }
-        if (wordIdx < words.length) {
-          let lastResult = results[results.length - 1];
-          if (lastResult) lastResult.text += ` ${words.slice(wordIdx).join(" ")}`;
-        }
-      } else {
-        for (const { box } of lineBoxes.slice(0, words.length)) {
-          results.push({ text: words.shift() ?? "", box, confidence: lineConf });
-        }
-        for (const { box } of lineBoxes.slice(words.length)) {
-          results.push({ text: "", box, confidence: lineConf });
-        }
+      const { mergedCanvas, cropWidths } = mergeLineCrop(sourceCanvas, lineBoxes, ctx.platform.createCanvas.bind(ctx.platform), ctx.platform.canvas);
+      const { text: lineText, confidence: lineConf, positions } = await recognizeText(mergedCanvas, ctx, charactersDictionary);
+      let pieces = splitTextByPositions(lineText, positions, cropWidths);
+      for (let i = 0; i < lineBoxes.length; i++) {
+        let lb = lineBoxes[i];
+        if (!lb) continue;
+        results.push({ text: (pieces[i] ?? "").trim(), box: lb.box, confidence: lineConf });
       }
     }
   }
@@ -3201,16 +3256,17 @@ async function runCrossLineStrategy(sourceCanvas, validBoxes, ctx, charactersDic
     if (lineBoxes.length === 1) {
       let first = lineBoxes[0];
       if (!first) continue;
-      lineCrops.push({ canvas: cropRegion(sourceCanvas, first.box, ctx.platform.canvas), boxes: lineBoxes });
+      let canvas = cropRegion(sourceCanvas, first.box, ctx.platform.canvas);
+      lineCrops.push({ canvas, boxes: lineBoxes, cropWidths: [canvas.width] });
     } else {
-      const { mergedCanvas } = mergeLineCrop(sourceCanvas, lineBoxes, ctx.platform.createCanvas.bind(ctx.platform), ctx.platform.canvas);
-      lineCrops.push({ canvas: mergedCanvas, boxes: lineBoxes });
+      const { mergedCanvas, cropWidths } = mergeLineCrop(sourceCanvas, lineBoxes, ctx.platform.createCanvas.bind(ctx.platform), ctx.platform.canvas);
+      lineCrops.push({ canvas: mergedCanvas, boxes: lineBoxes, cropWidths });
     }
   }
-  let resized = lineCrops.map(({ canvas, boxes }, i) => {
+  let resized = lineCrops.map(({ canvas, boxes, cropWidths }, i) => {
     let ar = canvas.width / canvas.height;
     let resizedWidth = Math.max(MIN_CROP_WIDTH, Math.round(targetHeight * ar));
-    return { canvas, boxes, resizedWidth, originalHeight: canvas.height, index: i };
+    return { canvas, boxes, cropWidths, resizedWidth, originalHeight: canvas.height, index: i };
   });
   let maxWidth = Math.max(...resized.map((r) => r.resizedWidth));
   let widthFactor = ctx.options.crossLineWidthFactor ?? 1.5;
@@ -3240,12 +3296,28 @@ async function runCrossLineStrategy(sourceCanvas, validBoxes, ctx, charactersDic
       offsetX += drawWidth;
       if (i < batchSorted.length - 1) offsetX += SEPARATOR_GAP;
     }
-    const { text: batchText, confidence: batchConf } = await recognizeText(batchCanvas, ctx, charactersDictionary);
-    let lineTexts = splitBatchTextByWidths(batchText, stretchedWidths);
+    const { text: batchText, confidence: batchConf, positions } = await recognizeText(batchCanvas, ctx, charactersDictionary);
+    let flatSegments = [];
+    let flatBoxes = [];
     for (let i = 0; i < batchSorted.length; i++) {
       let item = batchSorted[i];
-      if (!item) continue;
-      results.push(...distributeLineText(item.boxes, lineTexts[i] ?? "", batchConf));
+      let drawWidth = stretchedWidths[i];
+      if (!item || drawWidth === void 0) continue;
+      let scale = drawWidth / item.canvas.width;
+      for (let j = 0; j < item.boxes.length; j++) {
+        let lb = item.boxes[j];
+        if (!lb) continue;
+        let w = (item.cropWidths[j] ?? 0) * scale;
+        if (j === item.boxes.length - 1 && i < batchSorted.length - 1) w += SEPARATOR_GAP;
+        flatSegments.push(w);
+        flatBoxes.push(lb);
+      }
+    }
+    let pieces = splitTextByPositions(batchText, positions, flatSegments);
+    for (let k2 = 0; k2 < flatBoxes.length; k2++) {
+      let lb = flatBoxes[k2];
+      if (!lb) continue;
+      results.push({ text: (pieces[k2] ?? "").trim(), box: lb.box, confidence: batchConf });
     }
   }
   return sortByReadingOrder(results);
@@ -3303,15 +3375,23 @@ var init_base_recognition_service = __esm({
             return [];
           }
           let ctx = this.buildContext();
+          let results;
           switch (strategy) {
             case "cross-line":
-              return await runCrossLineStrategy(sourceCanvasForCrop, validBoxes, ctx, charactersDictionary);
+              results = await runCrossLineStrategy(sourceCanvasForCrop, validBoxes, ctx, charactersDictionary);
+              break;
             case "per-line":
-              return await runLineStrategy(sourceCanvasForCrop, validBoxes, ctx, charactersDictionary);
+              results = await runLineStrategy(sourceCanvasForCrop, validBoxes, ctx, charactersDictionary);
+              break;
             case "per-box":
             default:
-              return await runPerBoxStrategy(sourceCanvasForCrop, validBoxes, ctx, (canvas, box, index, total, debugPath, dict) => this.processBox(canvas, box, index, total, debugPath, dict), charactersDictionary);
+              results = await runPerBoxStrategy(sourceCanvasForCrop, validBoxes, ctx, (canvas, box, index, total, debugPath, dict) => this.processBox(canvas, box, index, total, debugPath, dict), charactersDictionary);
           }
+          let minimumConfidence = this.options.minimumConfidence ?? 0.5;
+          return minimumConfidence > 0 ? results.filter((r) => {
+            let bar = /[\p{L}\p{N}]/u.test(r.text) ? minimumConfidence : Math.min(1, minimumConfidence + 0.3);
+            return r.confidence >= bar;
+          }) : results;
         } catch (error) {
           console.error("Error during text recognition:", error instanceof Error ? error.message : String(error));
           return [];
